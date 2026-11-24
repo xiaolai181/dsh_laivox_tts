@@ -114,6 +114,16 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
     if (!chapter || chapter.isSnippet) return
     setShelfPick(current => current?.id === chapter.book ? current : { id: chapter.book, title: chapter.bookTitle })
   }, [chapter?.book, chapter?.isSnippet])
+  // Until a chapter has been shown, the shelf opens with its newest book's
+  // contents (the built-in samples on a fresh install): one click to listen.
+  const autoPick = useRef(true)
+  useEffect(() => {
+    if (chapter) { autoPick.current = false; return }
+    const first = books.value?.books?.[0]
+    if (!autoPick.current || !onShelf || shelfPick || booksQuery || !first) return
+    autoPick.current = false
+    setShelfPick(first)
+  }, [chapter, onShelf, books.value, shelfPick, booksQuery])
   useLayoutEffect(() => {
     setShelfQuery(''); setBatch(false); w.clearSelection()
     return () => selectingAll.current?.abort()
@@ -276,11 +286,11 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
     }}/>
     <TopBar chapter={chapter} draftBookTitle={w.appendBook?.title} books={books.value?.books} openBook={id=>nav({book:id})} scene={scene.scene} setScene={scene.setScene} tasks={inProgress} openQueue={()=>openQueue()} openSettings={()=>scene.openSheet('settings')} openRail={()=>setShelfOpen(true)}/>
     <div className="lv-shell-body">
-      {width>=1024 && scene.scene!=='library' && rail}
+      {width>=1024 && scene.scene!=='library' && (chapter || w.booting) && rail}
       <div className="lv-scene-room">
         {w.error && !scene.sheet && scene.sheet !== 'settings' && <div className="lv-inline lv-error" role="alert">{w.error}{w.memory.activeId && !w.creationSaved && <button onClick={()=>w.reloadChapter().then(w.clearError).catch(w.errors)}>{t("重新加载")}</button>}</div>}
         {blockedActions()}
-        {scene.scene==='listen' && <StageScene w={w} player={player} immersive={scene.immersive} setImmersive={scene.setImmersive} navigate={id=>nav({chapter:id})} listenFrom={w.listenFrom} create={()=>nav({new:true})} openImport={()=>fileInput.current.click()} books={books.value?.books} openBook={id=>nav({book:id})}/>}
+        {scene.scene==='listen' && <StageScene w={w} player={player} immersive={scene.immersive} setImmersive={scene.setImmersive} navigate={id=>nav({chapter:id})} listenFrom={w.listenFrom} create={()=>nav({new:true})} openImport={()=>fileInput.current.click()} books={books.value?.books} openBook={id=>nav({book:id})} openLibrary={()=>scene.setScene('library')}/>}
         {scene.scene==='studio' && <StudioScene w={w} player={player} tab={scene.studioTab} change={scene.setStudioTab} roleData={roleData} staleScript={staleScript} saveCreation={saveCreation} cancelCreation={cancelCreation} openQueue={()=>openQueue({chapter:chapter?.id})}/>}
         {scene.scene==='library' && <LibraryScene create={()=>nav({new:true})} creatingDisabled={busy} importFile={()=>fileInput.current.click()} uploading={uploading}
           tab={page==='import' && w.importEntry ? 'books' : scene.libraryTab} setTab={page==='import' && w.importEntry ? null : scene.setLibraryTab}>

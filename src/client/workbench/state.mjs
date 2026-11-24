@@ -17,7 +17,7 @@ export function clearLastChapter() {
   try { localStorage.removeItem(legacyLastChapterKey) } catch { /* storage may be blocked */ }
 }
 export function createWorkbenchMemory() {
-  return { scene: 'listen', immersive: true, skin: 'paper', activeId: lastChapter(), drafts: new Map(), scripts: new Map(), roles: new Map(),
+  return { immersive: true, skin: 'paper', activeId: lastChapter(), drafts: new Map(), scripts: new Map(), roles: new Map(),
     operations: new Map(), settings: { revision: 0, values: defaultSettings }, options: null }
 }
 

@@ -30,6 +30,12 @@ const signatureOf = view => [
   view?.previousComplete?.id,
 ].join('|')
 
+// Audio started elsewhere (the chat, the capsule) that the workbench should open.
+const livePlayback = player => {
+  const live = player.getSnapshot()
+  return live.chapter && live.job && ['playing', 'buffering', 'paused', 'blocked'].includes(live.phase) ? live : null
+}
+
 export function useWorkbench(player, navigation, memory) {
   const pending = useSyncExternalStore(navigation.subscribe, navigation.getSnapshot)
   const active = useRef(null)
@@ -53,7 +59,9 @@ export function useWorkbench(player, navigation, memory) {
   const [jobCounts, setJobCounts] = useState({})
   const countsRef = useRef(null)
   const [actions, setActions] = useState(new Map())
-  const [booting, setBooting] = useState(Boolean(memory.activeId || pending?.chapter))
+  // A chapter is about to be restored: the remembered one, one asked for from the
+  // conversation, or audio already playing elsewhere (see the mount effect).
+  const [booting, setBooting] = useState(() => Boolean(memory.activeId || pending?.chapter || pending?.book || livePlayback(player)))
   const [exportState, setExportState] = useState(null)
   const [exportFormat, setExportFormat] = useState('mp3')
   const life = useRef(false)
@@ -684,8 +692,8 @@ export function useWorkbench(player, navigation, memory) {
     if (!pending?.chapter) {
       // Audio started elsewhere (the chat, the capsule) keeps playing: open its
       // chapter and job instead of the remembered one, which would replace it.
-      const live = player.getSnapshot()
-      if (live.chapter && live.job && ['playing', 'buffering', 'paused', 'blocked'].includes(live.phase)) {
+      const live = livePlayback(player)
+      if (live) {
         void navigate({ chapter: live.chapter, job: live.job, restore: true })
       } else if (memory.activeId) void navigate({ chapter: memory.activeId, restore: true })
     }

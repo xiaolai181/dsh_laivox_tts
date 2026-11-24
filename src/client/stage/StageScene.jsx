@@ -6,7 +6,7 @@ import { EmptyStage } from './EmptyStage.jsx'
 import { MODE_NAMES, ProductionBar } from './ProductionBar.jsx'
 import { ProductionLive } from './ProductionLive.jsx'
 import { ProseChrome } from './ProseChrome.jsx'
-export function StageScene({ w, player, immersive, setImmersive, navigate, listenFrom, create, openImport, books, openBook }) {
+export function StageScene({ w, player, immersive, setImmersive, navigate, listenFrom, create, openImport, books, openBook, openLibrary }) {
   const chapter=w.chapter
   const s = useSyncExternalStore(player.subscribe, player.getSnapshot)
   if (w.booting && !chapter) return <section role="status">{t("正在打开章节…")}</section>
@@ -27,7 +27,7 @@ export function StageScene({ w, player, immersive, setImmersive, navigate, liste
     </ProseChrome>
     {chapter?.operation?.live && <ProductionLive key={chapter.operation.id} chapter={chapter} operation={chapter.operation} player={player}
       collapsible={hasAudio} listenFrom={listenFrom}/>}
-    {!chapter ? <EmptyStage w={w} create={create} openImport={openImport} books={books} openBook={openBook}/> : !chapter.media?.length ? <>
+    {!chapter ? <EmptyStage w={w} create={create} openImport={openImport} books={books} openBook={openBook} openLibrary={openLibrary}/> : !chapter.media?.length ? <>
       <EmptyStage w={w} create={create} openImport={openImport}/>
       <ProseView chapter={chapter} player={player} draft={w.draft} busy={w.busy} notify={w.flashNotice} navigate={navigate} onSeek={listenFrom}/>
     </> : immersive

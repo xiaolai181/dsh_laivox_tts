@@ -11,8 +11,21 @@ export function sceneFromWorkbench({ page, panel, reason }) {
   return {}
 }
 
+// Where the workbench opens: listening when a chapter is being restored (the
+// last one, one asked for from the conversation, or audio already playing),
+// otherwise the shelf.
+export function initialScene(remembered, booting) {
+  return remembered ?? (booting ? 'listen' : 'library')
+}
+
+// A restore that ended without a chapter (deleted, or could not be read) falls
+// back to the shelf, unless the user already chose a scene or is creating a book.
+export function restoreFallback({ wasBooting, booting, hasChapter, chosen, creating }) {
+  return wasBooting && !booting && !hasChapter && !chosen && !creating ? 'library' : null
+}
+
 export function useScene(w, memory) {
-  const [scene, updateScene] = useState(memory.scene ?? 'listen')
+  const [scene, updateScene] = useState(() => initialScene(memory.scene, w.booting))
   const [studioTab, setStudioTab] = useState('text')
   const [sheet, setSheet] = useState(null)
   const [focus, setFocus] = useState(null)
@@ -35,6 +48,13 @@ export function useScene(w, memory) {
   // Opening another chapter returns to listening, except the previous/next buttons
   // of the studio, which keep the user where they are working.
   useEffect(() => { if(w.chapter?.id){if(previousChapter.current!==w.chapter.id){if(memory.keepScene===w.chapter.id)memory.keepScene=null;else setScene('listen')}previousChapter.current=w.chapter.id} }, [w.chapter?.id])
+  const wasBooting = useRef(w.booting)
+  useEffect(() => {
+    const next = restoreFallback({ wasBooting: wasBooting.current, booting: w.booting, hasChapter: Boolean(w.chapter),
+      chosen: memory.scene != null, creating: Boolean(memory.creation) })
+    wasBooting.current = w.booting
+    if (next) setScene(next)
+  }, [w.booting])
   useEffect(() => {
     const next = sceneFromWorkbench({ page: w.page, panel: w.panel, reason: w.errorCode })
     if (next.scene) setScene(next.scene)

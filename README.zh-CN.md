@@ -37,7 +37,7 @@
 dsh plugin --profile desktop add "https://github.com/xiaolai181/dsh_laivox_tts/releases/latest/download/dsh-laivox-tts.tgz"
 ```
 
-这是预构建的插件包，不在你的电脑上编译，也不需要授权构建。想固定版本时，把 `latest/download` 换成 `download/v0.7.6`。所有版本见 [Releases](https://github.com/xiaolai181/dsh_laivox_tts/releases) 页面。
+这是预构建的插件包，不在你的电脑上编译，也不需要授权构建。想固定版本时，把 `latest/download` 换成 `download/v0.7.7`。所有版本见 [Releases](https://github.com/xiaolai181/dsh_laivox_tts/releases) 页面。
 
 ### 本地安装：用下载好的插件包
 
@@ -84,7 +84,7 @@ Profile 链接的是这个目录本身，安装后不要移动或删除它。`gi
 
 不想导入文件、只想粘贴正文时，用 **书架 →「新建书籍」**。
 
-全新空白 Profile 首次打开插件时，书架会预置两本试听示例：《社戏 · 月夜行船 · Edge》（由微软 Edge 在线语音单人朗读生成）与《绿野仙踪 · 营救铁皮人 · LaiVox》（由 LaiVox 预置音色多角色演绎生成）。无需配置 API Key，可直接点「试听示例」或在书架打开收听。
+全新空白 Profile 首次打开插件时，书架会预置两本试听示例：《社戏 · 月夜行船 · Edge》（由微软 Edge 在线语音单人朗读生成）与《绿野仙踪 · 营救铁皮人 · LaiVox》（由 LaiVox 预置音色多角色演绎生成）。无需配置 API Key，首次打开会直接进入书架，点示例书目录里的「收听」即可试听。
 
 ## 隐私与费用
 

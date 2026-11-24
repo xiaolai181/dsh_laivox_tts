@@ -39,7 +39,7 @@ Replace `desktop` with your own profile name wherever needed.
 dsh plugin --profile desktop add "https://github.com/xiaolai181/dsh_laivox_tts/releases/latest/download/dsh-laivox-tts.tgz"
 ```
 
-This is a prebuilt package. Nothing is compiled on your machine and no build permission is asked for. To pin a version, replace `latest/download` with `download/v0.7.6`. Other versions are listed on the [Releases](https://github.com/xiaolai181/dsh_laivox_tts/releases) page.
+This is a prebuilt package. Nothing is compiled on your machine and no build permission is asked for. To pin a version, replace `latest/download` with `download/v0.7.7`. Other versions are listed on the [Releases](https://github.com/xiaolai181/dsh_laivox_tts/releases) page.
 
 ### Local: install a downloaded package
 
