@@ -10,9 +10,9 @@ An audiobook plugin for [DeepSeek Harness](https://github.com/deepseek-ai/deepse
 
 ## What you can do
 
-- **Listen to a novel you have.** Import a TXT, EPUB, or text-based PDF file. Chapters are detected for you and shown in a preview before anything is saved. Pick a chapter and press 开始制作 (Start). Playback starts as soon as the first two segments are ready.
-- **Give each character a voice.** Choose 多角色演绎 (multi-voice) instead of 单人朗读 (single narrator). Your DSH model marks who is speaking and how, and each role gets its own voice. You see the expected number of model requests and confirm before any model call.
-- **Use LaiVox voices (optional).** Paid LaiVox members can switch the engine to LaiVox under 设置 → 制作 (Settings → Production) for LaiVox character voices and per-line delivery, including voices they uploaded in the LaiVox browser extension. Edge stays the default.
+- **Listen to a novel you have.** Import a TXT, EPUB, or text-based PDF file. Chapters are detected for you and shown in a preview before anything is saved. Pick a chapter and press 开始制作 (Start). Playback can start as soon as the first segment is ready.
+- **Give each character a voice.** Choose 多角色演绎 (multi-voice) instead of 单人朗读 (single narrator). Your DSH model marks who is speaking and in what tone, and each role gets its own voice. You see the expected number of model requests and confirm before any model call. Edge changes the voice per role but does not perform the per-line delivery; that requires LaiVox.
+- **Use LaiVox voices (optional).** Under Settings → 制作与发声 (Production and voice), switch the engine to LaiVox. That choice is marked recommended; Edge stays the default. LaiVox reads each line with its marked delivery. When the account has own voices enabled, voices uploaded in the LaiVox browser extension can be assigned to roles. LaiVox uses a membership reading allowance or a separately purchased read-aloud pack, and needs an API key.
 - **Let the AI do the setup.** In chat, say "turn book.txt in my workspace into an audiobook". The AI prepares an import preview and a production order under its reply. Nothing is imported or produced until you click confirm, and AI jobs queue behind yours instead of interrupting them.
 - **Hear a reply instead of reading it.** Click the speaker button 用 Edge 朗读 under any assistant message, or ask "read it to me". Closed code blocks and link addresses are skipped. Table cells are read.
 - **Quick snippets.** Type `/laivox some text` in the chat box to turn a passage into audio. The results are kept under 书架 → 对话音频 (Bookshelf → Chat audio).
@@ -79,10 +79,10 @@ The profile links to this folder, so keep it where it is. After `git pull`, run 
 
 Choose the workbench language in **DSH Settings → General → Language**. LaiVox supports Simplified Chinese, Traditional Chinese, and English.
 
-1. Open **Novel Audio** from the sidebar. The workbench has three tabs: Listen, Produce, and Bookshelf. Tasks and settings are at the top right.
+1. Open **小说配音（LaiVox）** from the sidebar. The workbench has three tabs: 收听 (Listen), 制作 (Produce), and 书架 (Bookshelf). Tasks and settings are at the top right.
 2. Go to **书架 → 导入 TXT / EPUB / PDF** and pick a file. If the chapter split looks wrong, click a chapter title to adjust it, then confirm the import.
 3. Open a chapter, choose **单人朗读** (single narrator) and press **开始制作**. This uses no AI.
-4. Press play once the first segments are ready. Speed, sleep timer, bookmarks and follow-along highlighting are in the player. The next chapter plays automatically; you can turn this off in settings.
+4. Press play once the first segment is ready. Speed, sleep timer, bookmarks and follow-along highlighting are in the player. The next chapter plays automatically; you can turn this off in settings.
 
 To paste text instead of importing a file, use **书架 → 新建书籍** (New book).
 
@@ -90,9 +90,9 @@ When opened on a fresh, empty profile for the first time, the bookshelf starts w
 
 ## Privacy and cost
 
-- **Edge voices** are free and need no account. The text being voiced is sent to Microsoft's online Edge speech service via an unofficial protocol; availability and terms of use are governed by Microsoft and are not guaranteed by this project.
+- **Edge voices** are the built-in online voices and need no account. The text being voiced is sent to Microsoft's online Edge speech service via an unofficial protocol; availability and terms of use are governed by Microsoft and are not guaranteed by this project.
 - **AI features** (cleanup, multi-voice scripting, AI-assisted chapter splitting) use the model you configured in DSH and count against that model's quota. Every such step shows the expected requests and waits for your confirmation. Single-narrator reading never calls a model.
-- **The LaiVox engine** is optional and needs a paid LaiVox membership or read-aloud pack. Choose it under 设置 → 制作 (Settings → Production) and save the API key from your LaiVox account. Text submitted for synthesis is sent to the LaiVox service and handled under its service and retention policies. Synthesis uses that account's voice quota, shared with the LaiVox browser extension. When today's quota runs out you can open the next usage day (after confirming) or finish the chapter with Edge voices. Voices uploaded in the LaiVox browser extension can be given to roles; uploading and editing them stay in the extension. The key is stored in DSH's credential service, and the plugin only contacts LaiVox while you use it.
+- **The LaiVox engine** is an optional paid add-on. It draws on a membership reading allowance or a separately purchased read-aloud pack. Choose it under Settings → 制作与发声 (Production and voice) and save the API key. Text submitted for synthesis is sent to the LaiVox service and handled under its service and retention policies. The reading allowance is shared with the LaiVox browser extension. A read-aloud pack or a quota pool ends when it is used up or expires. Only an older membership account that is still billed by usage day can open the next day, and only after you confirm. You can also finish the chapter with Edge. When the account has own voices enabled, voices uploaded in the browser extension can be given to roles; uploading and editing them stay in the extension. The key is stored in DSH's credential service, and the plugin only contacts LaiVox while you use it.
 - **Content rights**: import and synthesize only texts that you own or are legally permitted to process. Generated audio is for personal, lawful use.
 - The AI can read files only in the current chat's workspace, and it cannot delete your books.
 
@@ -101,7 +101,7 @@ When opened on a fresh, empty profile for the first time, the bookshelf starts w
 Everything stays on your machine, in the profile folder: `<DSH home>/profiles/<profile>/dsh-laivox-tts/`. The default DSH home is `~/.dsh`. A single `library.sqlite` holds the bookshelf, scripts, tasks, audio and playback positions.
 
 - **Back up before upgrading**: fully quit DSH and copy the whole `dsh-laivox-tts` folder. A newer version may upgrade the database (currently v12), and older versions can no longer open it.
-- **Audio budget**: 2 GiB by default, adjustable from 512 MiB to 20 GiB under 设置 → 存储 (Settings → Storage). When space runs out, new production pauses. You can clear audio by book or chapter, and text and scripts are kept.
+- **Audio budget**: 2 GiB by default, adjustable from 0.5 to 20 GiB under 设置 → 存储 (Settings → Storage). The new limit applies after you reopen DSH. When space runs out, new production pauses. You can clear audio by book or chapter, and text and scripts are kept.
 - **Chat audio** that has not been played for 7 days is deleted automatically. You can change this to 1 day, 30 days or never. Saving it to the bookshelf keeps it permanently.
 - **Built-in sample books** are seeded once on a fresh, empty profile (existing profiles with books are untouched when upgrading). You can delete them at any time and they will not reappear on restart or upgrade.
 - To wipe everything, uninstall the plugin and delete the `dsh-laivox-tts` folder.
@@ -111,7 +111,7 @@ Everything stays on your machine, in the profile folder: `<DSH home>/profiles/<p
 - Confirmation buttons, import previews and results appear only under the latest reply, not under earlier ones.
 - The first read-aloud sentence takes about 2 seconds. Later sentences take 0.5 to 1 second.
 - If the same chat is open in two windows, AI-started read-aloud plays in both.
-- Importing a single file is limited to 50 MiB, and to 5,000 chapters per book.
+- A single import file is limited to 50 MiB. An EPUB may expand to at most 150 MiB, and each file inside it to 32 MiB. A PDF is limited to 5,000 pages or 30 million characters. A book can have at most 5,000 chapters.
 
 ## License
 
