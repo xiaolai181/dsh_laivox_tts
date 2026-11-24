@@ -1,0 +1,115 @@
+/* Plugin pieces rendered inside DSH's conversation (dock, tool cards, turn tail,
+   mini capsule). They follow the host's look: every color, radius and focus ring
+   comes from DSH's --dsw-* tokens, never from the workbench skins. The fallbacks
+   only apply where the host tokens are absent (the test fixture). Every selector
+   starts with .lv-host so nothing leaks into the host or the workbench. */
+.lv-host {
+  --lvh-fb-ink: rgb(15, 17, 21); --lvh-fb-ink-2: rgb(97, 102, 107); --lvh-fb-ink-3: rgb(129, 133, 140);
+  --lvh-fb-line: rgba(0, 0, 0, .04); --lvh-fb-line-2: rgba(0, 0, 0, .1); --lvh-fb-hover: rgba(38, 49, 72, .06);
+  --lvh-fb-strong: rgb(15, 17, 21); --lvh-fb-on-strong: rgb(255, 255, 255); --lvh-fb-error: rgb(236, 19, 19);
+  --lvh-fb-accent: rgb(65, 118, 230); --lvh-fb-field: rgb(255, 255, 255); --lvh-fb-menu: rgba(252, 253, 254, .92);
+}
+@media (prefers-color-scheme: dark) {
+  .lv-host {
+    --lvh-fb-ink: rgb(249, 250, 251); --lvh-fb-ink-2: rgb(207, 211, 214); --lvh-fb-ink-3: rgb(173, 178, 184);
+    --lvh-fb-line: rgba(255, 255, 255, .06); --lvh-fb-line-2: rgba(255, 255, 255, .12); --lvh-fb-hover: rgba(255, 255, 255, .08);
+    --lvh-fb-strong: rgb(249, 250, 251); --lvh-fb-on-strong: rgb(15, 17, 21); --lvh-fb-error: rgb(242, 90, 90);
+    --lvh-fb-accent: rgb(122, 170, 255); --lvh-fb-field: rgb(21, 21, 23); --lvh-fb-menu: rgba(48, 49, 54, .92);
+  }
+}
+.lv-host {
+  --lvh-ink: var(--dsw-alias-label-primary, var(--lvh-fb-ink));
+  --lvh-ink-2: var(--dsw-alias-label-secondary, var(--lvh-fb-ink-2));
+  --lvh-ink-3: var(--dsw-alias-label-tertiary, var(--lvh-fb-ink-3));
+  --lvh-line: var(--dsw-alias-border-l1, var(--lvh-fb-line));
+  --lvh-line-2: var(--dsw-alias-border-l2, var(--lvh-fb-line-2));
+  --lvh-hover: var(--dsw-alias-interactive-bg-hover, var(--lvh-fb-hover));
+  --lvh-strong: var(--dsw-alias-button-primary-fill, var(--dsw-alias-brand-primary, var(--lvh-fb-strong)));
+  --lvh-on-strong: var(--dsw-alias-label-primary-foreground, var(--lvh-fb-on-strong));
+  --lvh-error: var(--dsw-alias-state-error-primary, var(--lvh-fb-error));
+  --lvh-accent: var(--dsw-alias-state-business-primary, var(--lvh-fb-accent));
+  --lvh-field: var(--dsw-alias-bg-base, var(--lvh-fb-field));
+  --lvh-menu: var(--dsw-specific-menu, var(--lvh-fb-menu));
+  --lvh-radius-sm: var(--dsw-radius-sm, 6px);
+  --lvh-radius-md: var(--dsw-radius-md, 8px);
+  --lvh-radius-lg: var(--dsw-radius-lg, 12px);
+  color: var(--lvh-ink);
+  font: inherit;
+  min-width: 0;
+}
+.lv-host * { box-sizing: border-box; }
+.lv-host :focus-visible { outline: var(--dsw-focus-ring-width, 2px) solid var(--dsw-focus-ring-color, var(--lvh-accent)); outline-offset: -2px; }
+
+/* one line: text that may wrap, actions on the right */
+.lv-host .lv-hline { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-height: 32px; font-size: 13px; line-height: 1.5; }
+.lv-host .lv-hgrow { flex: 1 1 12rem; min-width: 0; overflow-wrap: anywhere; }
+.lv-host .lv-htitle { font-weight: 500; }
+.lv-host .lv-hmeta { color: var(--lvh-ink-3); }
+.lv-host .lv-hmeta.lv-herror, .lv-host .lv-herror { color: var(--lvh-error); }
+.lv-host .lv-hactions { display: inline-flex; flex: none; flex-wrap: wrap; align-items: center; gap: 2px; }
+.lv-host .lv-hdot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--lvh-ink-3); }
+.lv-host .lv-htime { font-variant-numeric: tabular-nums; }
+.lv-host .lv-hglyph { flex: none; display: inline-grid; place-items: center; color: var(--lvh-ink-3); }
+
+.lv-host button.lv-hbtn { display: inline-flex; align-items: center; gap: 4px; height: 28px; padding: 0 10px; border: 0; border-radius: var(--lvh-radius-sm);
+  background: transparent; color: var(--lvh-ink-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.lv-host button.lv-hbtn:hover:not(:disabled) { background: var(--lvh-hover); color: var(--lvh-ink); }
+.lv-host button.lv-hbtn.lv-hprimary { background: var(--lvh-strong); color: var(--lvh-on-strong); }
+.lv-host button.lv-hbtn.lv-hprimary:hover:not(:disabled) { background: var(--lvh-strong); opacity: .88; color: var(--lvh-on-strong); }
+.lv-host button.lv-hbtn:disabled { opacity: .45; cursor: default; }
+
+/* tool card and turn tail: no fill, no border */
+.lv-host.lv-htool, .lv-host.lv-hresult { display: grid; gap: 2px; margin: 2px 0 8px; }
+.lv-host .lv-hexpand { display: grid; gap: 8px; margin: 4px 0; padding: 10px 12px; border: .5px solid var(--lvh-line-2); border-radius: var(--lvh-radius-md); }
+.lv-host .lv-hexpand textarea { width: 100%; min-height: 64px; resize: vertical; padding: 8px; border: .5px solid var(--lvh-line-2); border-radius: var(--lvh-radius-sm);
+  background: var(--lvh-field); color: var(--lvh-ink); font: inherit; font-size: 13px; line-height: 1.6; }
+.lv-host .lv-hexpand label { display: inline-flex; align-items: center; gap: 6px; margin-right: 14px; font-size: 13px; color: var(--lvh-ink-2); }
+.lv-host .lv-hhint { font-size: 12px; color: var(--lvh-ink-3); }
+.lv-host .lv-halert { font-size: 12px; color: var(--lvh-error); }
+
+/* Dock: the geometry of the host's own QueueDock (dsh-client-ui-conversation),
+   attached to the top of the composer card. */
+.lv-host.lv-hdock {
+  flex: none;
+  width: calc(100% - var(--dsh-composer-side-clearance, 0px) - var(--dsh-composer-side-clearance, 0px) - var(--dsh-composer-dock-inset, 12px) - var(--dsh-composer-dock-inset, 12px));
+  max-width: calc(var(--dsh-composer-card-max-width, 100%) - var(--dsh-composer-dock-inset, 12px) - var(--dsh-composer-dock-inset, 12px));
+  margin: 0 auto calc(0px - var(--dsh-composer-stack-gap, 0px) - 3px);
+  padding: 0 var(--dsh-composer-dock-inset, 0px);
+}
+.lv-host .lv-hdock-panel { position: relative; isolation: isolate; overflow: hidden; width: 100%; padding: 2px 0 5px; border-radius: var(--lvh-radius-lg) var(--lvh-radius-lg) 0 0; }
+.lv-host .lv-hdock-panel::before { content: ''; position: absolute; z-index: -1; inset: 0; border-radius: inherit; background: var(--lvh-menu);
+  backdrop-filter: var(--dsw-menu-backdrop-filter, blur(20px)); pointer-events: none; }
+.lv-host .lv-hdock-panel::after { content: ''; position: absolute; inset: 0; border: .5px solid var(--lvh-line); border-bottom: none; border-radius: inherit; pointer-events: none; }
+.lv-host .lv-hdock-head { display: flex; align-items: center; gap: 10px; min-height: 36px; padding: 4px 6px 4px 12px; }
+.lv-host .lv-hdock-count { flex: 1 1 auto; min-width: 0; overflow: hidden; font-size: 13px; font-weight: 500; line-height: 24px; text-overflow: ellipsis; white-space: nowrap; }
+.lv-host .lv-hdock-count .lv-hmeta { font-weight: 400; }
+.lv-host .lv-hdock-body { max-height: 240px; overflow-y: auto; }
+.lv-host .lv-hdock-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; min-height: 36px; padding: 4px 6px 4px 12px; font-size: 13px; box-shadow: inset 0 1px 0 var(--lvh-line); }
+.lv-host .lv-hdock-row > .lv-hexpand { flex: 1 1 100%; }
+.lv-host .lv-hprogress { height: 2px; margin-top: 4px; overflow: hidden; border-radius: 2px; background: var(--lvh-line-2); }
+.lv-host .lv-hprogress > i { display: block; height: 100%; background: var(--lvh-accent); }
+
+/* mini capsule (floats over the host frame) */
+.lv-host.lv-mini-anchor { position: fixed; right: .9rem; bottom: .9rem; z-index: 12; width: min(22rem, calc(100% - 1.8rem)); display: flex; justify-content: flex-end; }
+.lv-host .lv-mini-capsule { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; height: 40px; padding: 0 6px; border: .5px solid var(--lvh-line-2); border-radius: 999px;
+  background: var(--lvh-menu); backdrop-filter: var(--dsw-menu-backdrop-filter, blur(20px)); box-shadow: 0 4px 16px rgba(0, 0, 0, .08); font-size: 13px; }
+.lv-host .lv-mini-capsule span { min-width: 0; overflow: hidden; color: var(--lvh-ink-2); text-overflow: ellipsis; white-space: nowrap; }
+.lv-host .lv-mini-capsule button.lv-hplay { display: grid; place-items: center; flex: none; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%;
+  background: var(--lvh-strong); color: var(--lvh-on-strong); cursor: pointer; }
+.lv-host .lv-mini-capsule button.lv-hplay:disabled { opacity: .45; cursor: default; }
+.lv-host .lv-mini-capsule .lv-role-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--lv-role-color, var(--lvh-ink-3)); flex: none; }
+.lv-host button.lv-hbtn.lv-hclose { padding: 0 6px; color: var(--lvh-ink-3); }
+
+/* "对话片段" in a result line: a quiet link to the conversation audio list. */
+.lv-host button.lv-hlink { display: inline; height: auto; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.lv-host button.lv-hlink:hover { color: var(--lvh-ink); }
+
+/* The message "read aloud" button: icon only, like the host's copy button. */
+.lv-host.lv-hspeak { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.lv-host button.lv-hbtn.lv-hicon { width: 28px; padding: 0; justify-content: center; }
+.lv-host .lv-hspinning svg { animation: lv-hspin 0.9s linear infinite; }
+@keyframes lv-hspin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .lv-host .lv-hspinning svg { animation: none; } }
+
+/* The chapter list of a production batch. */
+.lv-host .lv-hlist { margin: 0; padding-left: 20px; font-size: 13px; line-height: 1.6; color: var(--lvh-ink-2); }

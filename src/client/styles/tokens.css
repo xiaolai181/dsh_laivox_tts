@@ -1,0 +1,98 @@
+.lv-ui:not([data-skin]), .lv-ui[data-skin=paper] {
+  --lv-bg:#f3f0e9; --lv-surface:#f8f6f1; --lv-surface-2:#ece8df; --lv-elevated:#ffffff;
+  --lv-line:rgba(45,36,22,.10); --lv-line-strong:rgba(45,36,22,.20);
+  --lv-ink:#1e1b16; --lv-ink-mute:#6a6357; --lv-ink-dim:#857c6d; --lv-unread:#968d7e;
+  --lv-accent:#b8441c; --lv-on-accent:#ffffff; --lv-warn:#9a6416; --lv-danger:#a63d32;
+  --lv-play-bg:#1e1b16; --lv-play-fg:#f8f6f1;
+  --lv-film-done:#cfc8ba; --lv-film-cur:#1e1b16; --lv-film-gen:#b8441c; --lv-film-q:#e7e2d7;
+  --lv-shadow:0 1px 2px rgba(45,36,22,.06), 0 10px 28px -16px rgba(45,36,22,.22);
+  --lv-grain:.035;
+  --lv-role-0:#5f7a8a; --lv-role-1:#9a6a5a; --lv-role-2:#6a7f5f; --lv-role-3:#7a6a8a; --lv-role-4:#a0745c;
+  --lv-role-5:#5f6f8a; --lv-role-6:#8a7f4f; --lv-role-7:#8a5f6f; --lv-role-8:#4f7f7a; --lv-role-narrator:#a39a8a;
+  --lv-title:600 28px/1.25 var(--lv-serif); --lv-cur:600 31px/1.6 var(--lv-serif); --lv-prose:17px/1.85 var(--lv-serif);
+  --lv-r-s:6px; --lv-r-m:8px; --lv-r-l:12px;
+  color-scheme: light;
+}
+.lv-ui[data-skin=paper][data-theme=dark] {
+  --lv-bg:#191816; --lv-surface:#201f1c; --lv-surface-2:#2a2825; --lv-elevated:#2f2d29;
+  --lv-line:rgba(255,245,230,.08); --lv-line-strong:rgba(255,245,230,.16);
+  --lv-ink:#ece6da; --lv-ink-mute:#a69f92; --lv-ink-dim:#857e72; --lv-unread:#7d766b;
+  --lv-accent:#e0764f; --lv-on-accent:#1a1310; --lv-warn:#d4a35a; --lv-danger:#e07a6c;
+  --lv-play-bg:#ece6da; --lv-play-fg:#191816;
+  --lv-film-done:#4a4640; --lv-film-cur:#ece6da; --lv-film-gen:#e0764f; --lv-film-q:#2a2825;
+  --lv-shadow:0 1px 0 rgba(255,245,230,.04) inset, 0 18px 40px -20px rgba(0,0,0,.7);
+  --lv-grain:.05;
+  --lv-role-0:#8fa9b8; --lv-role-1:#c99a89; --lv-role-2:#9bb08f; --lv-role-3:#a99abb; --lv-role-4:#cfa58c;
+  --lv-role-5:#8f9fbb; --lv-role-6:#bbb07f; --lv-role-7:#bb8f9f; --lv-role-8:#7fb0aa; --lv-role-narrator:#7d766b;
+  color-scheme: dark;
+}
+.lv-ui[data-skin=graphite] {
+  --lv-bg:#f7f7f8; --lv-surface:#ffffff; --lv-surface-2:#f0f0f2; --lv-elevated:#ffffff;
+  --lv-line:rgba(15,15,20,.08); --lv-line-strong:rgba(15,15,20,.15);
+  --lv-ink:#141416; --lv-ink-mute:#5e5f66; --lv-ink-dim:#7c7d84; --lv-unread:#8a8b92;
+  --lv-accent:#2f62d9; --lv-on-accent:#ffffff; --lv-warn:#a16207; --lv-danger:#c0392b;
+  --lv-play-bg:#141416; --lv-play-fg:#ffffff;
+  --lv-film-done:#d4d5d9; --lv-film-cur:#141416; --lv-film-gen:#2f62d9; --lv-film-q:#ececef;
+  --lv-shadow:0 1px 2px rgba(15,15,20,.06), 0 10px 28px -16px rgba(15,15,20,.2);
+  --lv-grain:0;
+  --lv-role-0:#4f6a99; --lv-role-1:#a0655c; --lv-role-2:#5c7f56; --lv-role-3:#7a5f9a; --lv-role-4:#9a7a3f;
+  --lv-role-5:#3f7f80; --lv-role-6:#995f80; --lv-role-7:#6f7a3f; --lv-role-8:#5f6f8f; --lv-role-narrator:#8a8b92;
+  --lv-title:650 26px/1.25 var(--lv-sans); --lv-cur:600 30px/1.55 var(--lv-sans); --lv-prose:16.5px/1.8 var(--lv-sans);
+  --lv-r-s:8px; --lv-r-m:10px; --lv-r-l:14px;
+  color-scheme: light;
+}
+.lv-ui[data-skin=graphite][data-theme=dark] {
+  --lv-bg:#0f1012; --lv-surface:#16171a; --lv-surface-2:#1d1e22; --lv-elevated:#25262b;
+  --lv-line:rgba(255,255,255,.07); --lv-line-strong:rgba(255,255,255,.14);
+  --lv-ink:#ececee; --lv-ink-mute:#9b9ca3; --lv-ink-dim:#74757c; --lv-unread:#686970;
+  --lv-accent:#7aa2ff; --lv-on-accent:#0b1020; --lv-warn:#e0b050; --lv-danger:#f08a80;
+  --lv-play-bg:#ececee; --lv-play-fg:#0f1012;
+  --lv-film-done:#3a3b41; --lv-film-cur:#ececee; --lv-film-gen:#7aa2ff; --lv-film-q:#1d1e22;
+  --lv-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 18px 40px -20px rgba(0,0,0,.8);
+  --lv-role-0:#9fb4d9; --lv-role-1:#d9a7a0; --lv-role-2:#a9c7a4; --lv-role-3:#b9a8d8; --lv-role-4:#d8c39a;
+  --lv-role-5:#9cc9c9; --lv-role-6:#d6b3c9; --lv-role-7:#c4c4a0; --lv-role-8:#a8b4c8; --lv-role-narrator:#77787f;
+  color-scheme: dark;
+}
+.lv-ui {
+  --lv-sans:"Segoe UI Variable Text","Segoe UI",system-ui,"PingFang SC","Microsoft YaHei UI","Noto Sans CJK SC",sans-serif;
+  --lv-serif:"Noto Serif CJK SC","Source Han Serif SC","Songti SC",SimSun,serif;
+  --lv-mono:"Cascadia Code","JetBrains Mono",ui-monospace,Consolas,monospace;
+  color: var(--lv-ink); background: var(--lv-bg); font: 14px/1.5 var(--lv-sans);
+  --lv-sp-1:4px; --lv-sp-2:8px; --lv-sp-3:12px; --lv-sp-4:16px; --lv-sp-5:20px; --lv-sp-6:24px; --lv-sp-7:32px; --lv-sp-8:40px;
+  --lv-fs-cap:11px; --lv-fs-meta:12px; --lv-fs-ui:13px; --lv-fs-body:14px; --lv-fs-h3:15px; --lv-fs-h2:17px;
+  --lv-h-sm:28px; --lv-h-md:32px;
+  --lv-dur-1:120ms; --lv-dur-2:180ms; --lv-ease:cubic-bezier(.2,.7,.2,1);
+}
+
+@media (prefers-color-scheme: dark) {
+.lv-ui[data-skin=paper][data-theme=system], .lv-ui:not([data-skin])[data-theme=system] {
+  --lv-bg:#191816; --lv-surface:#201f1c; --lv-surface-2:#2a2825; --lv-elevated:#2f2d29;
+  --lv-line:rgba(255,245,230,.08); --lv-line-strong:rgba(255,245,230,.16);
+  --lv-ink:#ece6da; --lv-ink-mute:#a69f92; --lv-ink-dim:#857e72; --lv-unread:#7d766b;
+  --lv-accent:#e0764f; --lv-on-accent:#1a1310; --lv-warn:#d4a35a; --lv-danger:#e07a6c;
+  --lv-play-bg:#ece6da; --lv-play-fg:#191816;
+  --lv-film-done:#4a4640; --lv-film-cur:#ece6da; --lv-film-gen:#e0764f; --lv-film-q:#2a2825;
+  --lv-shadow:0 1px 0 rgba(255,245,230,.04) inset, 0 18px 40px -20px rgba(0,0,0,.7);
+  --lv-grain:.05;
+  --lv-role-0:#8fa9b8; --lv-role-1:#c99a89; --lv-role-2:#9bb08f; --lv-role-3:#a99abb; --lv-role-4:#cfa58c;
+  --lv-role-5:#8f9fbb; --lv-role-6:#bbb07f; --lv-role-7:#bb8f9f; --lv-role-8:#7fb0aa; --lv-role-narrator:#7d766b;
+  color-scheme: dark;
+}
+}
+
+@media (prefers-color-scheme: dark) {
+.lv-ui[data-skin=graphite][data-theme=system] {
+  --lv-bg:#0f1012; --lv-surface:#16171a; --lv-surface-2:#1d1e22; --lv-elevated:#25262b;
+  --lv-line:rgba(255,255,255,.07); --lv-line-strong:rgba(255,255,255,.14);
+  --lv-ink:#ececee; --lv-ink-mute:#9b9ca3; --lv-ink-dim:#74757c; --lv-unread:#686970;
+  --lv-accent:#7aa2ff; --lv-on-accent:#0b1020; --lv-warn:#e0b050; --lv-danger:#f08a80;
+  --lv-play-bg:#ececee; --lv-play-fg:#0f1012;
+  --lv-film-done:#3a3b41; --lv-film-cur:#ececee; --lv-film-gen:#7aa2ff; --lv-film-q:#1d1e22;
+  --lv-shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 18px 40px -20px rgba(0,0,0,.8);
+  --lv-role-0:#9fb4d9; --lv-role-1:#d9a7a0; --lv-role-2:#a9c7a4; --lv-role-3:#b9a8d8; --lv-role-4:#d8c39a;
+  --lv-role-5:#9cc9c9; --lv-role-6:#d6b3c9; --lv-role-7:#c4c4a0; --lv-role-8:#a8b4c8; --lv-role-narrator:#77787f;
+  color-scheme: dark;
+}
+}
+
+.lv-ui { --lv-backdrop: rgba(0,0,0,.22); }

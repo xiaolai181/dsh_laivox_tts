@@ -1,0 +1,135 @@
+{
+  "source": "LaiVox preset voices",
+  "voices": [
+    {
+      "id": "narrator_male",
+      "file": "narrator_male_zh.wav",
+      "sha256": "d3a0454a3d8b6297009b97b81ac886b4181b4398739491fd373629f9b17df07d"
+    },
+    {
+      "id": "narrator_female",
+      "file": "narrator_female_zh.wav",
+      "sha256": "45255bca0537fd50d568322460cd2ca549e3da16a3909fa15808d65dfe104daf"
+    },
+    {
+      "id": "narrator_young",
+      "file": "narrator_young_zh.wav",
+      "sha256": "23f27c65aeb203e356c7b1ece1845cf0921878d53cfbd50f006b2f40be4b1ec0"
+    },
+    {
+      "id": "male_mastermind",
+      "file": "male_mastermind_zh.wav",
+      "sha256": "5447b81d32d701100824dbb7b9d6c72e911aa26245198b12dd545cc19bc712aa"
+    },
+    {
+      "id": "male_hotblooded",
+      "file": "male_hotblooded_zh.wav",
+      "sha256": "d38c05ecfbc3c8524d241e2bea7914284f02bfc45be7cc2b8c99e9ce37d81808"
+    },
+    {
+      "id": "male_cold_noble",
+      "file": "male_cold_noble_zh.wav",
+      "sha256": "8daf93fe025203949c0d05d22dfdb98156f675101c47af104e967cddf0a448b8"
+    },
+    {
+      "id": "female_sweet",
+      "file": "female_sweet_zh.wav",
+      "sha256": "598eec061bd5e9b445dde419424c9407437cd4e08c55b33271f2263612de6847"
+    },
+    {
+      "id": "female_villain",
+      "file": "female_villain_zh.wav",
+      "sha256": "a138b95718107e0e0d6c51bfd73a1cd30a8785559743d237c971b6f24dbba8d7"
+    },
+    {
+      "id": "elder_kind",
+      "file": "elder_kind_zh.wav",
+      "sha256": "84727976b5be124d8730731d8c75c598dde33a4eb53cdde81c28c508bd9d12c0"
+    },
+    {
+      "id": "system_mech",
+      "file": "system_mech_zh.wav",
+      "sha256": "8b24b063702776c738a5a5cbbf441ec92b965747762bd37135bc5205740b3983"
+    },
+    {
+      "id": "male_teen",
+      "file": "male_teen_zh.wav",
+      "sha256": "bff4fa38ff9fda5ff6eb84e28cc5992006c8d7c25a6638c5fd01d470052c59d8"
+    },
+    {
+      "id": "girl_child_lively",
+      "file": "girl_child_lively_zh.wav",
+      "sha256": "108f6a5d4dc2c7f4505713db944c6e7efc9386e4796b1d89d531dd74d7af5ba0"
+    },
+    {
+      "id": "girl_teen_bright",
+      "file": "girl_teen_bright_zh.wav",
+      "sha256": "2e5b3b6062dd97072851527a3c98ac1051ae37cd7fa43db9300291e9faa0c4b8"
+    },
+    {
+      "id": "girl_teen_soft",
+      "file": "girl_teen_soft_zh.wav",
+      "sha256": "30e0eae8d4f6997fecd7c2b9c7295c70698ff32f28815e01777b99ad8328e4bc"
+    },
+    {
+      "id": "woman_young_calm",
+      "file": "woman_young_calm_zh.wav",
+      "sha256": "d2eccbd749b74ceff86f98a81c1c1f787218eee6f6c27e2a88c0c275e7844ecb"
+    },
+    {
+      "id": "woman_young_vivid",
+      "file": "woman_young_vivid_zh.wav",
+      "sha256": "82ffff4525c94ad4ecbc1968162edb26c0ed1bdc8d0f94510c5a3809bda99994"
+    },
+    {
+      "id": "woman_mid_mellow",
+      "file": "woman_mid_mellow_zh.wav",
+      "sha256": "5c98d66574d45229e41ad722466513214fa9870e3e1a802c6040a7c198fecb1e"
+    },
+    {
+      "id": "woman_mid_poised",
+      "file": "woman_mid_poised_zh.wav",
+      "sha256": "1ff2d777be256922e399218bb7cd8e41e2cf1eef7215ff2b780a0974b1a27b55"
+    },
+    {
+      "id": "woman_elder_warm",
+      "file": "woman_elder_warm_zh.wav",
+      "sha256": "b39da902e07691136cd8bbe236b1e8ca4a2b4ca57b1691e2729f58138f06325c"
+    },
+    {
+      "id": "boy_child_vivid",
+      "file": "boy_child_vivid_zh.wav",
+      "sha256": "f75aee689da433c80c0e1209f256d432f3a38488dd3be3236853ccfb01f3a49a"
+    },
+    {
+      "id": "boy_child_soft",
+      "file": "boy_child_soft_zh.wav",
+      "sha256": "ec7b0ddbd09dac65fabe41be2df691a5d7882e7a4fa2724fc558185f568599f5"
+    },
+    {
+      "id": "man_young_gentle",
+      "file": "man_young_gentle_zh.wav",
+      "sha256": "d351e65ac7cdaf967b35aadca82dbc630f4880060aabc763403ea539b10e60ea"
+    },
+    {
+      "id": "man_mid_formal",
+      "file": "man_mid_formal_zh.wav",
+      "sha256": "032c62d9b887e9f9c85a8b600f8023bf4bf71a05cdc9f84fd01b3dfbe4a15e97"
+    },
+    {
+      "id": "man_mid_story",
+      "file": "man_mid_story_zh.wav",
+      "sha256": "5b259ff57f25c1f6e683da5dd90936a1ed0b354a520fd61093039eb227710ea5"
+    },
+    {
+      "id": "man_elder_deep",
+      "file": "man_elder_deep_zh.wav",
+      "sha256": "3d40d27f0a31ef2ecb13f8a4a90b616ffaede60ce873818a5309017d23290ddc"
+    },
+    {
+      "id": "special_manbo",
+      "file": "special_manbo_zh.wav",
+      "sha256": "5b599926e4676b2db0f05d8c7c9c67113eca54e0ee1a966f9c0d1d5963386706"
+    }
+  ]
+}

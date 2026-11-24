@@ -1,0 +1,43 @@
+name: Release
+
+# Pushing a v* tag builds the plugin and attaches the prebuilt package to a
+# GitHub Release. The asset name has no version, so the stable link is
+# https://github.com/<owner>/<repo>/releases/latest/download/dsh-laivox-tts.tgz
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install (runs prepare, which builds lib/)
+        run: npx --yes pnpm@10.34.9 install --frozen-lockfile
+      - name: Check the tag matches package.json
+        run: test "v$(node -p "require('./package.json').version")" = "$GITHUB_REF_NAME"
+      - name: Check the build output
+        run: test -f lib/index.mjs && test -f lib/client.js && test -f lib/vendor/msedge-tts.cjs && test -f lib/vendor/msedge-tts.licenses.txt
+      - name: Pack
+        run: |
+          npx --yes pnpm@10.34.9 pack
+          mv dsh-laivox-tts-*.tgz dsh-laivox-tts.tgz
+          tar -tzf dsh-laivox-tts.tgz | grep -qx 'package/lib/client.js'
+          tar -tzf dsh-laivox-tts.tgz | grep -qx 'package/cordis.patch.yml'
+          tar -tzf dsh-laivox-tts.tgz | grep -qx 'package/lib/vendor/msedge-tts.cjs'
+          tar -tzf dsh-laivox-tts.tgz | grep -qx 'package/lib/vendor/msedge-tts.licenses.txt'
+          tar -tzf dsh-laivox-tts.tgz | grep -qx 'package/assets/samples/manifest.json'
+          sha256sum dsh-laivox-tts.tgz > dsh-laivox-tts.tgz.sha256
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dsh-laivox-tts.tgz dsh-laivox-tts.tgz.sha256 \
+            --title "LaiVox $GITHUB_REF_NAME" \
+            --notes "预构建插件包。下载 dsh-laivox-tts.tgz 后运行：dsh plugin --profile <Profile 名> add ./dsh-laivox-tts.tgz"

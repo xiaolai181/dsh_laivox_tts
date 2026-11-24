@@ -1,0 +1,113 @@
+/* Shared control language for the workbench. Paper and graphite both use these
+   tokens; chat cards and the LaiVox dock keep their own surfaces. */
+
+.lv-ui button {
+  transition: background var(--lv-dur-1) var(--lv-ease), border-color var(--lv-dur-1) var(--lv-ease), color var(--lv-dur-1) var(--lv-ease), opacity var(--lv-dur-1) var(--lv-ease);
+}
+.lv-ui button.lv-primary,
+.lv-ui button.lv-primary:hover:not(:disabled) {
+  background: var(--lv-play-bg); border-color: var(--lv-play-bg); color: var(--lv-play-fg);
+}
+.lv-ui button.lv-primary:hover:not(:disabled) { filter: brightness(1.08); }
+.lv-ui button.lv-play:active:not(:disabled) { transform: scale(.96); }
+
+.lv-ui button.lv-chip {
+  border-radius: 999px; min-height: var(--lv-h-sm); padding: 2px 12px;
+  background: var(--lv-surface-2); border-color: transparent; color: var(--lv-ink-mute);
+}
+.lv-chip-row { display: flex; gap: 8px; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 4px; }
+.lv-chip-row > button { flex: none; }
+
+.lv-ui .lv-segmented button[aria-pressed=true],
+.lv-ui .lv-segmented button[aria-selected=true],
+.lv-ui .lv-scene-tabs button[aria-selected=true],
+.lv-ui button.lv-chip[aria-pressed=true],
+.lv-library-scene .lv-books button[aria-pressed=true] {
+  background: var(--lv-elevated); color: var(--lv-ink); border-color: var(--lv-ink);
+  box-shadow: inset 0 0 0 2px var(--lv-ink);
+}
+.lv-script-filters { position: sticky; top: 0; z-index: 2; background: var(--lv-bg); padding: 8px 0; }
+.lv-ui .lv-script article {
+  display: grid; grid-template-columns: 7.5rem minmax(0, 1fr) auto;
+  gap: 8px 16px; align-items: start; padding: 14px 12px 14px 14px;
+  border-radius: var(--lv-r-m); scroll-margin-top: 72px;
+}
+.lv-ui .lv-script article:focus-visible { outline: 2px solid var(--lv-accent); outline-offset: 2px; }
+.lv-script-check { grid-column: 1 / -1; }
+.lv-script-who { display: flex; flex-direction: column; gap: 2px; min-width: 0; color: var(--lv-ink-mute); font-size: var(--lv-fs-meta); }
+.lv-script-who span { color: var(--lv-ink); font-weight: 650; }
+.lv-script-main { min-width: 0; }
+.lv-ui .lv-script article p { margin: 0; }
+.lv-script-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+.lv-script-status { color: var(--lv-ink-dim); font-size: var(--lv-fs-meta); text-align: right; }
+.lv-script-extra { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-items: center; }
+.lv-script-extra, .lv-chapter-listen { opacity: 0; }
+.lv-script article:hover .lv-script-extra,
+.lv-script article:focus-within .lv-script-extra,
+.lv-contents > div:hover .lv-chapter-listen,
+.lv-contents > div:focus-within .lv-chapter-listen { opacity: 1; }
+
+.lv-row-editor {
+  opacity: 1; transform: none;
+  transition: opacity var(--lv-dur-2) var(--lv-ease), transform var(--lv-dur-2) var(--lv-ease);
+  background: var(--lv-surface-2);
+}
+@starting-style { .lv-row-editor { opacity: 0; transform: translateY(4px); } }
+
+.lv-studio .lv-role-card {
+  position: relative; display: grid; gap: 8px; align-items: start;
+  padding: 14px 14px 14px 18px; overflow: hidden;
+}
+.lv-studio .lv-role-card::before {
+  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
+  background: var(--lv-role-color, var(--lv-ink-dim));
+}
+.lv-role-voice { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lv-ui .lv-role-pick { flex: 1; min-width: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left; }
+.lv-ui .lv-role-pick span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lv-ui .lv-role-pick small { flex: none; white-space: nowrap; }
+.lv-role-edge { color: var(--lv-ink-mute); }
+.lv-role-list { display: flex; flex-direction: column; }
+.lv-role-row {
+  display: flex; align-items: center; gap: 10px; padding: 8px 8px 8px 12px;
+  border-bottom: 1px solid var(--lv-line); box-shadow: inset 4px 0 0 var(--lv-role-color, transparent);
+}
+.lv-role-row strong { flex: 0 1 8rem; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lv-role-row .lv-role-pick { flex: 1; }
+
+.lv-library-scene .lv-books button:hover:not(:disabled) { box-shadow: var(--lv-shadow); }
+.lv-library-scene .lv-book-cover {
+  aspect-ratio: 3 / 4; height: auto; display: flex; align-items: flex-end;
+  padding: 12px; box-shadow: inset 5px 0 0 var(--lv-role-color, var(--lv-ink-dim));
+  font-size: inherit; place-items: unset;
+}
+.lv-ui .lv-books .lv-book-title {
+  width: 100%;
+  font-family: var(--lv-serif); font-size: var(--lv-fs-h3); font-weight: 650; line-height: 1.35;
+  text-align: left; white-space: normal;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
+}
+.lv-book-meta { display: flex; align-items: center; gap: 6px; color: var(--lv-ink-mute); font-size: var(--lv-fs-meta); }
+.lv-batch { background: var(--lv-surface-2); border-radius: var(--lv-r-m); padding: 12px; margin: 8px 0; }
+
+.lv-queue-row { grid-template-columns: auto minmax(0, 1fr) auto; }
+.lv-status-dot { width: 8px; height: 8px; margin-top: 8px; border-radius: 50%; background: var(--lv-ink-dim); }
+.lv-queue-row[data-state=running] .lv-status-dot { background: var(--lv-ink); }
+.lv-queue-row[data-state=paused] .lv-status-dot { background: var(--lv-warn); }
+.lv-queue-row[data-state=queued] .lv-status-dot { background: var(--lv-line-strong); }
+
+@supports selector(::details-content) {
+  .lv-ui details::details-content { transition: opacity var(--lv-dur-2) var(--lv-ease), content-visibility var(--lv-dur-2) allow-discrete; opacity: 0; }
+  .lv-ui details[open]::details-content { opacity: 1; }
+}
+
+@container workbench (max-width: 759px) {
+  .lv-ui .lv-script article { grid-template-columns: minmax(0, 1fr); }
+  .lv-script-actions { align-items: flex-start; }
+  .lv-script-extra, .lv-chapter-listen { opacity: 1; }
+  .lv-library-scene .lv-books { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 759px), (hover: none) {
+  .lv-ui .lv-script article { grid-template-columns: minmax(0, 1fr); }
+  .lv-script-extra, .lv-chapter-listen { opacity: 1; }
+}

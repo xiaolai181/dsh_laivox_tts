@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Novel voices (LaiVox)",
+    "description": "Turns TXT, EPUB, and text-based PDF novels into multi-voice audio inside DSH, with a bookshelf, per-chapter synthesis, playback, and MP3/WAV export. Reads chat replies aloud, and lets the AI add books, import files and queue production for you to confirm.",
+    "detail": "docs/DETAIL.en.md"
+  }
+}

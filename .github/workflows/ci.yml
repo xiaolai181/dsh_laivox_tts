@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request: {}
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-pack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install and build
+        run: npx --yes pnpm@10.34.9 install --frozen-lockfile
+      - name: Check build outputs
+        run: |
+          test -f lib/index.mjs
+          test -f lib/client.js
+          test -f lib/vendor/msedge-tts.cjs
+          test -f lib/vendor/msedge-tts.licenses.txt
+      - name: Pack and verify tarball contents
+        run: |
+          npx --yes pnpm@10.34.9 pack
+          mv dsh-laivox-tts-*.tgz dsh-laivox-tts.tgz
+          tar -tzf dsh-laivox-tts.tgz | grep -qx 'package/package.json'
+          tar -tzf dsh-laivox-tts.tgz | grep -qx 'package/lib/index.mjs'
+          tar -tzf dsh-laivox-tts.tgz | grep -qx 'package/lib/client.js'
+          tar -tzf dsh-laivox-tts.tgz | grep -qx 'package/lib/vendor/msedge-tts.cjs'
+          tar -tzf dsh-laivox-tts.tgz | grep -qx 'package/lib/vendor/msedge-tts.licenses.txt'
+          tar -tzf dsh-laivox-tts.tgz | grep -qx 'package/cordis.patch.yml'
+          tar -tzf dsh-laivox-tts.tgz | grep -qx 'package/assets/samples/manifest.json'
+          if tar -tzf dsh-laivox-tts.tgz | grep -Eq '^package/(tests|scripts|src/client)/|^package/AGENTS\.md$'; then
+            echo "Unexpected development files in tarball" >&2
+            exit 1
+          fi
