@@ -1,27 +1,25 @@
 # Novel voices (LaiVox)
 
-Turn TXT, EPUB, and text-based PDF novels into playable audio in DeepSeek Harness, or read chat messages aloud.
+Turn TXT, EPUB, and PDF novels into audiobooks inside DeepSeek Harness, or have AI replies read aloud with one click. Built-in online voices work out of the box with no account required.
+
+On first launch, two playable sample books are placed on your bookshelf—a single-voice Edge sample and a multi-voice LaiVox sample—so you can preview both styles right away and delete them anytime.
 
 ## What you can do
 
-- Import TXT, EPUB, or text-based PDF books and organize them into chapters.
-- Produce single-voice or multi-voice narration. Edge Online Speech is the default and needs no account. Paid LaiVox members can switch engines in Settings → Production, use their LaiVox speech quota, and select voices they uploaded in the LaiVox browser extension.
-- Use `/laivox` in chat or ask AI to propose a reading. Confirm below the reply before AI cleanup or scripting begins.
-- Use **Read aloud with Edge** next to an assistant message, or ask the assistant to read aloud.
-- Ask AI to search the bookshelf, create books, append chapters, preview TXT, EPUB, or PDF files from the workspace, or draft a production plan. You confirm imports and production. You can also import files delivered in chat from their file actions.
-- Play at different speeds, set a sleep timer, jump to a segment, and export MP3 or WAV.
+- **Turn books into audio**: Import TXT, EPUB, or PDF files with automatic chapter detection, or paste text into a new book. Playback begins as soon as the first segment is ready.
+- **Single-voice or multi-voice narration**: Single-voice reading works immediately without AI. Switch to **Multi-voice narration** to let your DSH model identify speakers and tone, giving each character a distinct voice.
+- **Listen to AI replies and quick passages**: Click **Read aloud with Edge** next to an assistant message, ask the assistant to read aloud, or run `/laivox` on any passage. Chat clips stay organized under **Bookshelf → Chat audio** and can be saved to your bookshelf anytime.
+- **Let AI help organize and queue**: Ask AI to check your bookshelf, prepare an import preview from your workspace, or queue chapters for production. Files delivered in chat also include one-click **Import into LaiVox**. Every import and model-assisted step shows a preview and waits for your confirmation.
+- **Comfortable listening and offline export**: Adjust speed, set a sleep timer, resume where you left off, add bookmarks, and follow along with highlighted text. Export chapters as MP3 or WAV, or a whole book as a ZIP archive.
 
-## Chat and playback
+## Voice engines
 
-- Reading proposals, production plans, and import previews appear under the latest reply with confirmation controls. The tool card also lets you confirm.
-- The LaiVox bar above the chat box shows pending items, production progress, and the option to continue listening. Use × to hide it or adjust when it appears in Settings.
-- Recent results appear at the end of the latest turn. Preview in chat or open the chapter in the workbench.
-- Reading a reply aloud pauses the novel. The mini player offers **Continue listening** at the end.
-- Chat audio is grouped by conversation under Bookshelf → Chat audio. Inactive items expire after the configurable retention period, which defaults to seven days.
+- **Microsoft Edge online voices (default)**: Ready out of the box with no sign-up—great for single-voice reading, basic multi-voice playback, and reading chat replies aloud.
+- **LaiVox expressive voices (optional add-on)**: Switch in **Settings → Production & Voice Engine** for per-line expressive delivery and access to **My voices** uploaded in the LaiVox browser extension. Requires an API key backed by a LaiVox membership reading allowance or a separately purchased read-aloud pack.
 
-## Language and data
+## Privacy and notes
 
-- Choose Simplified Chinese, Traditional Chinese, or English in DSH Settings → General → Language. The workbench follows the selected language.
-- All book data is stored in the Profile's `dsh-laivox-tts` folder. The legacy `laivox-novel-audio` folder is not migrated automatically. Older plugin versions cannot open the current v12 database. Back it up before upgrading.
-- On a fresh empty profile, first launch seeds two ready-to-play sample books (Edge single-narrator reading generated with Microsoft Edge online speech and LaiVox multi-role performance using preset voices) without requiring an API key. Deleting them keeps them removed across restarts and upgrades.
-- Reading aloud sends text to Microsoft’s Edge speech service.
+- **Language**: Follows **DSH Settings → General → Language** (Simplified Chinese, Traditional Chinese, and English).
+- **Stored locally**: Your bookshelf, text, scripts, and audio stay on your machine. Unplayed chat audio expires after 7 days by default (configurable in Settings).
+- **Online speech services**: Text being voiced is sent to the speech engine you choose (Microsoft Edge or LaiVox). Single-voice reading never uses DSH model quota.
+- **PDF support**: Works with text-based PDFs; image-only scanned PDFs are not supported.

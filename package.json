@@ -1,8 +1,8 @@
 {
   "name": "dsh-laivox-tts",
-  "version": "0.7.7",
+  "version": "0.7.8",
   "private": false,
-  "description": "在 DSH 里把 TXT / EPUB / PDF 小说做成多角色音频：书架、逐章合成、播放与 MP3/WAV 导出。",
+  "description": "把 TXT、EPUB、PDF 小说做成单人朗读或多角色有声书，也能一键朗读对话里的 AI 回答，支持本地书架与 MP3/WAV 导出。",
   "license": "MIT",
   "repository": {
     "type": "git",

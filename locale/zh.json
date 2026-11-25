@@ -1,7 +1,7 @@
 {
   "meta": {
     "title": "小说配音（LaiVox）",
-    "description": "把小说做成可听的音频：书架、逐章朗读、多角色配音、播放与导出；也能朗读对话里的回答，让 AI 帮你建书、导入和排队制作。",
+    "description": "把 TXT、EPUB、PDF 小说做成单人朗读或多角色有声书，也能一键朗读对话里的 AI 回答。默认开箱可用，支持本地书架管理与 MP3/WAV 导出。",
     "detail": "docs/DETAIL.md"
   }
 }
