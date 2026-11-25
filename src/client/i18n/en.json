@@ -1388,5 +1388,13 @@
   "内置示例文件校验未通过。": "Built-in sample checksum verification failed.",
   "内置示例书籍数据无效。": "Built-in sample book data is invalid.",
   "内置示例音频分段不完整。": "Built-in sample audio segments are incomplete.",
-  "内置示例音频格式无效。": "Built-in sample audio format is invalid."
+  "内置示例音频格式无效。": "Built-in sample audio format is invalid.",
+  "选择一本书查看章节目录": "Select a book to view its chapters",
+  "关闭播放器": "Close player",
+  "暂停并关闭播放器": "Pause and close player",
+  "暂停并关闭": "Pause and close",
+  "右下角迷你播放条": "Bottom-right mini player",
+  "播放或暂停时": "While playing or paused",
+  "仅播放时": "Only while playing",
+  "离开工作台后右下角悬浮播放条的显示时机；也可随时点条上的 × 关闭。对话消息的即时朗读提示不受影响。": "Controls when the floating mini player appears in the bottom-right corner outside the workbench; you can still close it anytime with ×. Instant chat message readings are unaffected."
 }

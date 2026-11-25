@@ -5,6 +5,7 @@ import { Icon } from './components/Icon.jsx'
 import { Shell } from './shell/Shell.jsx'
 import { createWorkbenchMemory, lastChapterKey } from './workbench/state.mjs'
 import { MiniCapsule } from './player/MiniCapsule.jsx'
+import { createCapsuleState } from './player/capsuleState.mjs'
 import { createPlayerController } from './player/controller.mjs'
 import { bindPreviewChannel, bindSpeechStop } from './player/previewChannel.mjs'
 import { NovelDock } from './chat/NovelDock.jsx'
@@ -95,18 +96,25 @@ export function apply(ctx) {
   }
   const isPanelActive = () => ctx.layout.panelInfo.getSnapshot().activePanelId === PANEL
 
-  // When the dock shows (setting) and what the user closed with × per session.
+  // When the dock and mini capsule show (settings) and what the user closed with × per session.
   // Closing hides exactly what was on the bar; anything new brings it back.
   let chatDock = memory.settings?.values?.chatDock ?? 'auto'
+  let miniCapsule = memory.settings?.values?.miniCapsule ?? 'auto'
   const prefListeners = new Set()
   const dockPrefs = {
     subscribe(listener) { prefListeners.add(listener); return () => prefListeners.delete(listener) },
     getSnapshot: () => chatDock,
   }
+  const capsulePrefs = {
+    subscribe(listener) { prefListeners.add(listener); return () => prefListeners.delete(listener) },
+    getSnapshot: () => miniCapsule,
+  }
   function readPrefs(values) {
-    const next = values?.chatDock ?? 'auto'
-    if (next === chatDock) return
-    chatDock = next
+    const nextDock = values?.chatDock ?? 'auto'
+    const nextCapsule = values?.miniCapsule ?? 'auto'
+    if (nextDock === chatDock && nextCapsule === miniCapsule) return
+    chatDock = nextDock
+    miniCapsule = nextCapsule
     for (const item of prefListeners) item()
   }
   const dismissed = new Map()
@@ -115,20 +123,9 @@ export function apply(ctx) {
     set(session, keys) { dismissed.set(session, new Set(keys)) },
   }
 
-  // A short message shown in the mini capsule instead of the current sentence.
-  let capsuleNotice = null
-  let capsuleTimer
-  const capsuleListeners = new Set()
-  const capsule = {
-    subscribe(listener) { capsuleListeners.add(listener); return () => capsuleListeners.delete(listener) },
-    getSnapshot: () => capsuleNotice,
-    show(message) {
-      clearTimeout(capsuleTimer)
-      capsuleNotice = message
-      for (const item of capsuleListeners) item()
-      capsuleTimer = setTimeout(() => { capsuleNotice = null; for (const item of capsuleListeners) item() }, 6000)
-    },
-  }
+  // A short message shown in the mini capsule instead of the current sentence,
+  // plus session dismissal (woken again on active playback, resume, or notice).
+  const capsule = createCapsuleState()
 
   // With the workbench closed, the capsule continues with the next chapter in
   // place (no panel switch). The workbench handles its own case (Shell.jsx).
@@ -144,7 +141,7 @@ export function apply(ctx) {
       try { await playback.listen(decision.chapter) }
       catch { capsule.show(deferText(() => t('下一章还没有音频'))) }
     })
-    return () => { off(); clearTimeout(capsuleTimer) }
+    return () => off()
   })
 
   // The dock may show before the workbench was ever opened: read the saved
@@ -196,9 +193,26 @@ export function apply(ctx) {
     void tick()
     const flush = () => player.flush()
     window.addEventListener('pagehide', flush)
+    let lastPhase = player.getSnapshot().phase
+    const offPlayer = player.subscribe(() => {
+      const phase = player.getSnapshot().phase
+      if (phase === lastPhase) return
+      lastPhase = phase
+      if (phase === 'playing' || phase === 'buffering') capsule.wake()
+    })
+    let lastResume = speech.getSnapshot().resume
+    const offSpeech = speech.subscribe(() => {
+      const resume = speech.getSnapshot().resume
+      if (resume === lastResume) return
+      lastResume = resume
+      if (resume) capsule.wake()
+    })
     return () => {
       clearTimeout(timer)
       shutdown.abort()
+      offPlayer()
+      offSpeech()
+      capsule.dispose()
       if (typeof document !== 'undefined') document.removeEventListener('visibilitychange', wake)
       window.removeEventListener('pagehide', flush)
       style.remove()
@@ -221,8 +235,10 @@ export function apply(ctx) {
 
   function MiniPlayer() {
     const layout = useSyncExternalStore(ctx.layout.panelInfo.subscribe.bind(ctx.layout.panelInfo), ctx.layout.panelInfo.getSnapshot.bind(ctx.layout.panelInfo))
-    const notice = useSyncExternalStore(capsule.subscribe, capsule.getSnapshot)
-    return layout.activePanelId === PANEL ? null : <div className="lv-host lv-mini-anchor"><MiniCapsule player={player} notice={notice} open={openChapter} speech={speech}/></div>
+    const capsuleState = useSyncExternalStore(capsule.subscribe, capsule.getSnapshot)
+    const capsuleMode = useSyncExternalStore(capsulePrefs.subscribe, capsulePrefs.getSnapshot)
+    return layout.activePanelId === PANEL ? null
+      : <div className="lv-host lv-mini-anchor"><MiniCapsule player={player} notice={capsuleState.notice} dismissed={capsuleState.dismissed} dismiss={capsule.dismiss} mode={capsuleMode} open={openChapter} speech={speech}/></div>
   }
 
   function DockSlot({ sessionKey, sessionId }) {

@@ -2,13 +2,14 @@ import { displayText, translate as t } from '../i18n/locale.mjs'
 import React, { useSyncExternalStore } from 'react'
 import { explain } from '../api.mjs'
 import { Icon } from '../components/Icon.jsx'
+import { shouldShowNovelCapsule } from './capsuleState.mjs'
 
 const quietSpeech = { subscribe: () => () => {}, getSnapshot: () => null }
 
 // Floats over the DSH frame while the workbench is closed, in the host's look.
 // While a message or the AI is being read aloud it shows that reading (the tool
 // card may be folded away); afterwards it offers to continue the novel.
-export function MiniCapsule({ player, open, notice, speech }) {
+export function MiniCapsule({ player, open, notice, dismissed = false, dismiss, mode = 'auto', speech }) {
   const s=useSyncExternalStore(player.subscribe,player.getSnapshot)
   const voice=useSyncExternalStore((speech ?? quietSpeech).subscribe,(speech ?? quietSpeech).getSnapshot)
   if(voice && ['loading','playing','blocked','error'].includes(voice.phase)){
@@ -21,14 +22,20 @@ export function MiniCapsule({ player, open, notice, speech }) {
       <button className="lv-hbtn" onClick={()=>speech.stop()}>{voice.phase==='error'?t('关闭'):t('停止')}</button>
     </section>
   }
-  if(!s.job || !s.segments.length)return null
   const part=s.segments[s.n]
   const playing=['playing','buffering'].includes(s.phase)
   // After a reading paused the novel: continuing is the user's choice.
   const resume=!playing && voice?.resume?.chapter===s.chapter ? voice.resume : null
+  if(!shouldShowNovelCapsule({ phase: s.phase, job: s.job, segments: s.segments, resume, notice, dismissed, mode }))return null
   return <section className="lv-mini-capsule" aria-label={t("小说播放器")}>
     <button className="lv-hplay" disabled={(s.settled && !s.segments.some(row=>row.ready)) || s.phase==='blocked'} aria-label={playing?t('暂停播放'):t('播放')} onClick={()=>{if(resume)speech.resumeNovel();else player.toggle()}}><Icon name={playing?'Pause':'Play'} size={14}/></button>
     {notice ? <span role="status">{displayText(notice)}</span> : resume ? <span role="status">{t("朗读已结束 · 继续听")}</span> : <span>{[...(part?.text??s.title)].slice(0,18).join('')}</span>}
     {resume ? <button className="lv-hbtn" onClick={()=>speech.resumeNovel()}>{t("继续听")}</button> : <button className="lv-hbtn" onClick={()=>open(s.chapter,s.job)}>{t("回到小说")}</button>}
+    {dismiss && <button type="button" className="lv-hbtn lv-hclose lv-hicon"
+      aria-label={playing ? t('暂停并关闭播放器') : t('关闭播放器')}
+      title={playing ? t('暂停并关闭') : t('关闭')}
+      onClick={() => { if (playing) player.pause(); if (resume) speech?.dismissResume?.(); dismiss() }}>
+      <Icon name="X" size={14}/>
+    </button>}
   </section>
 }

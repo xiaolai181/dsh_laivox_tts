@@ -90,8 +90,8 @@
 .lv-host .lv-hprogress > i { display: block; height: 100%; background: var(--lvh-accent); }
 
 /* mini capsule (floats over the host frame) */
-.lv-host.lv-mini-anchor { position: fixed; right: .9rem; bottom: .9rem; z-index: 12; width: min(22rem, calc(100% - 1.8rem)); display: flex; justify-content: flex-end; }
-.lv-host .lv-mini-capsule { display: inline-flex; align-items: center; gap: 8px; max-width: 100%; height: 40px; padding: 0 6px; border: .5px solid var(--lvh-line-2); border-radius: 999px;
+.lv-host.lv-mini-anchor { position: fixed; right: .9rem; bottom: .9rem; z-index: 12; width: min(24rem, calc(100% - 1.8rem)); display: flex; justify-content: flex-end; }
+.lv-host .lv-mini-capsule { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 40px; padding: 0 6px; border: .5px solid var(--lvh-line-2); border-radius: 999px;
   background: var(--lvh-menu); backdrop-filter: var(--dsw-menu-backdrop-filter, blur(20px)); box-shadow: 0 4px 16px rgba(0, 0, 0, .08); font-size: 13px; }
 .lv-host .lv-mini-capsule span { min-width: 0; overflow: hidden; color: var(--lvh-ink-2); text-overflow: ellipsis; white-space: nowrap; }
 .lv-host .lv-mini-capsule button.lv-hplay { display: grid; place-items: center; flex: none; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%;
@@ -99,6 +99,7 @@
 .lv-host .lv-mini-capsule button.lv-hplay:disabled { opacity: .45; cursor: default; }
 .lv-host .lv-mini-capsule .lv-role-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--lv-role-color, var(--lvh-ink-3)); flex: none; }
 .lv-host button.lv-hbtn.lv-hclose { padding: 0 6px; color: var(--lvh-ink-3); }
+.lv-host .lv-mini-capsule button.lv-hclose { flex: none; border-radius: 50%; }
 
 /* "对话片段" in a result line: a quiet link to the conversation audio list. */
 .lv-host button.lv-hlink { display: inline; height: auto; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }

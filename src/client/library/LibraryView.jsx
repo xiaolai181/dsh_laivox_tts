@@ -7,6 +7,7 @@ import { Icon } from '../components/Icon.jsx'
 import { StorageUsage } from '../components/Metrics.jsx'
 import { rovingIndex } from '../studio/roving.mjs'
 import { ChapterReview, cutLabels } from './ChapterReview.jsx'
+import { nextShelfDetailOnResize } from './shelfLayout.mjs'
 
 function exportText(state) {
   if (!state) return ''
@@ -123,7 +124,8 @@ function chapterState(chapter) {
   return null
 }
 
-export function LibraryView({ books, chapters, selectedBook, active, booksQuery, changeBooksQuery, chapterQuery, changeChapterQuery,
+export function LibraryView({ books, chapters, selectedBook, active, mode = 'books', split = false, openShelfDetail, closeShelfDetail, openBook,
+  booksQuery, changeBooksQuery, chapterQuery, changeChapterQuery,
   selectShelfBook, openChapter, listenChapter, clearAudio, uploading, cancelUpload, continueImport,
   batch, toggleBatch, selection, toggleChapter, selectRows, invertRows, clearSelection, selectBook, generateBatch, recastSelected,
   exportState, exportFormat, setExportFormat, exportBook, cancelExport, renameBook, deleteBook,
@@ -135,6 +137,10 @@ export function LibraryView({ books, chapters, selectedBook, active, booksQuery,
   const contentsHeading = useRef(null)
   const moveToContents = useRef(false)
   const anchor = useRef(null)
+  const prevSplit = useRef(split)
+  const prevMode = useRef(mode)
+  const returnBookId = useRef(null)
+  const booksContainerRef = useRef(null)
   const [renaming, setRenaming] = useState(false)
   const [name, setName] = useState('')
   const book = selectedBook?.id
@@ -149,11 +155,31 @@ export function LibraryView({ books, chapters, selectedBook, active, booksQuery,
     if (active) activeRef.current?.scrollIntoView({ block: 'nearest' })
   }, [active, contents])
   useEffect(() => {
-    if (moveToContents.current) {
+    if (moveToContents.current && (mode === 'split' || mode === 'detail')) {
       moveToContents.current = false
       contentsHeading.current?.focus()
     }
-  }, [book])
+  }, [book, mode])
+  useEffect(() => {
+    const wasSplit = prevSplit.current
+    prevSplit.current = split
+    if (wasSplit === split) return
+    const keepDetail = nextShelfDetailOnResize({ wasSplit, isSplit: split, detail: mode === 'detail', batch, renaming })
+    if (wasSplit && !split) {
+      if (keepDetail && book) openShelfDetail?.()
+      else closeShelfDetail?.()
+    }
+  }, [split, mode, batch, renaming, book])
+  useEffect(() => {
+    const wasMode = prevMode.current
+    prevMode.current = mode
+    if (wasMode === 'detail' && mode === 'books' && returnBookId.current) {
+      const targetId = returnBookId.current
+      returnBookId.current = null
+      const buttons = [...(booksContainerRef.current?.querySelectorAll(':scope > button') ?? [])]
+      buttons.find(button => button.dataset.bookId === targetId)?.focus()
+    }
+  }, [mode])
   useEffect(() => { anchor.current = null }, [book, batch])
   function toggleAt(row, index, shift) {
     if (shift && anchor.current != null) {
@@ -165,7 +191,22 @@ export function LibraryView({ books, chapters, selectedBook, active, booksQuery,
     toggleChapter(row)
     anchor.current = index
   }
-  return <aside className="lv-shelf" aria-label={t("书架")}>
+  const bookActions = book && <div className="lv-inline">
+    <button disabled={disabled} onClick={append}>{t("添加章节")}</button>
+    <button disabled={disabled} aria-pressed={batch} onClick={toggleBatch}>{batch ? t('结束选择') : t('批量选择')}</button>
+    {/* Book-wide actions sit at the top: a long chapter list must not hide them. */}
+    <Popover label={t("书籍操作")} trigger={t("书籍操作")} placement="bottom-end">{close => <div className="lv-menu lv-book-menu">
+      <button disabled={disabled || renaming} onClick={() => { close(); setName(selectedBook.title); setRenaming(true) }}>{t("重命名")}</button>
+      <button disabled={disabled} onClick={() => { close(); clearAudio({ book }) }}>{t("清理书中音频")}</button>
+      <hr className="lv-menu-divider"/>
+      {['mp3', 'wav'].map(format => <button key={format} disabled={disabled || exportInfo?.state === 'running'}
+        onClick={() => { close(); exportBook(book, format, selectedBook.title) }}>{t('导出整本 · {format}', { format: format.toUpperCase() })}</button>)}
+      <hr className="lv-menu-divider"/>
+      <button className="lv-destructive" disabled={disabled} onClick={() => { close(); deleteBook(book, {
+        title: selectedBook.title, chapters: selectedBook.chapters, audioBytes: selectedBook.audioBytes }) }}>{t("删除本书")}</button>
+    </div>}</Popover>
+  </div>
+  const booksPane = <>
     {uploading && <div className="lv-inline"><small role="status">{t("正在打开导入预览…")}</small><button onClick={cancelUpload}>{t("取消")}</button></div>}
     {data?.imports?.length > 0 && <div className="lv-import-banner" role="status"><span>{t('待完成导入（{count} 本）', { count: data.imports.length })}</span>
       {data.imports.map(item => <button key={item.id} title={item.title} disabled={uploading} onClick={() => continueImport(item.id)}>{t("继续导入") + " · "}{item.title}</button>)}</div>}
@@ -174,16 +215,25 @@ export function LibraryView({ books, chapters, selectedBook, active, booksQuery,
     {books.error && <div role="alert" className="lv-error">{displayText(books.error)} <button onClick={books.reload}>{t("重试")}</button></div>}
     {!data && !books.error && <small role="status">{t("正在读取书架…")}</small>}
     {data && !data.books.length && <p className="lv-muted">{booksQuery ? t('没有匹配的书籍。') : t('还没有书籍。可以导入文件，或新建书籍后粘贴正文。')}</p>}
-    <div className="lv-books" onKeyDown={event => {
+    <div ref={booksContainerRef} className="lv-books" onKeyDown={event => {
       if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
       const buttons = [...event.currentTarget.querySelectorAll(':scope > button')]
       const index = buttons.indexOf(document.activeElement)
       if (index < 0) return
       event.preventDefault()
       buttons[rovingIndex(event.key, index, buttons.length)]?.focus()
-    }}>{data?.books?.map(item => <button key={item.id} aria-pressed={book === item.id} disabled={disabled} onClick={() => {
+    }}>{data?.books?.map(item => <button key={item.id} data-book-id={item.id} aria-pressed={book === item.id} disabled={disabled} onClick={() => {
+      if (mode !== 'split') {
+        returnBookId.current = item.id
+        moveToContents.current = true
+        selectShelfBook(item)
+        openShelfDetail?.()
+        return
+      }
       if (book === item.id) contentsHeading.current?.focus()
       else { moveToContents.current = true; selectShelfBook(item) }
+    }} onDoubleClick={() => {
+      if (mode === 'split' && !disabled) void openBook?.(item.id)
     }}>
       <i aria-hidden="true" className="lv-book-cover" style={{'--lv-role-color':roleColor(item.id)}}><span className="lv-book-title">{item.title}</span></i>
       <span className="lv-book-meta">{item.chapters}{" " + t("章")}{item.audioBytes > 0 && <Icon name="Headphones"/>}</span>
@@ -193,24 +243,18 @@ export function LibraryView({ books, chapters, selectedBook, active, booksQuery,
       {books.next && <button onClick={books.next}>{t("更多书籍")}</button>}
     </div>
     {data?.space && <StorageUsage compact space={data.space}/>}
-    {book && <><div className="lv-heading lv-contents-heading">
-      <h2 ref={contentsHeading} tabIndex={-1}>{t('《{title}》的章节目录', { title: selectedBook.title })}</h2>
-      <div className="lv-inline">
-        <button disabled={disabled} onClick={append}>{t("添加章节")}</button>
-        <button disabled={disabled} aria-pressed={batch} onClick={toggleBatch}>{batch ? t('结束选择') : t('批量选择')}</button>
-        {/* Book-wide actions sit at the top: a long chapter list must not hide them. */}
-        <Popover label={t("书籍操作")} trigger={t("书籍操作")} placement="bottom-end">{close => <div className="lv-menu lv-book-menu">
-          <button disabled={disabled || renaming} onClick={() => { close(); setName(selectedBook.title); setRenaming(true) }}>{t("重命名")}</button>
-          <button disabled={disabled} onClick={() => { close(); clearAudio({ book }) }}>{t("清理书中音频")}</button>
-          <hr className="lv-menu-divider"/>
-          {['mp3', 'wav'].map(format => <button key={format} disabled={disabled || exportInfo?.state === 'running'}
-            onClick={() => { close(); exportBook(book, format, selectedBook.title) }}>{t('导出整本 · {format}', { format: format.toUpperCase() })}</button>)}
-          <hr className="lv-menu-divider"/>
-          <button className="lv-destructive" disabled={disabled} onClick={() => { close(); deleteBook(book, {
-            title: selectedBook.title, chapters: selectedBook.chapters, audioBytes: selectedBook.audioBytes }) }}>{t("删除本书")}</button>
-        </div>}</Popover>
-      </div>
-    </div>
+  </>
+  const chaptersPane = <>
+    {mode === 'detail' && <div className="lv-shelf-detail-bar">
+      <button type="button" className="lv-subtle lv-shelf-back" onClick={closeShelfDetail}><Icon name="ChevronLeft" size={16}/><span>{t("返回书架")}</span></button>
+      {bookActions}
+    </div>}
+    {!book && mode === 'split' && <div className="lv-shelf-empty-detail"><p className="lv-muted">{t("选择一本书查看章节目录")}</p></div>}
+    {book && <>{mode === 'detail' ? <h2 ref={contentsHeading} tabIndex={-1} className="lv-shelf-detail-heading">{t('《{title}》的章节目录', { title: selectedBook.title })}</h2>
+      : <div className="lv-heading lv-contents-heading">
+        <h2 ref={contentsHeading} tabIndex={-1}>{t('《{title}》的章节目录', { title: selectedBook.title })}</h2>
+        {bookActions}
+      </div>}
       {renaming && <form className="lv-rename" onSubmit={event => { event.preventDefault(); void saveName() }}>
         <input aria-label={t("新的书名")} value={name} maxLength={180} autoFocus onChange={event => setName(event.target.value)}/>
         <button className="lv-primary" disabled={!name.trim()}>{t("保存")}</button>
@@ -258,7 +302,7 @@ export function LibraryView({ books, chapters, selectedBook, active, booksQuery,
           <button className="lv-link" title={chapter.title} aria-current={active === chapter.id ? 'true' : undefined} aria-label={chapter.title + (state ? ' ' + state[0] : '')} disabled={disabled}
             onClick={event => batch ? toggleAt(chapter, index, event.shiftKey) : openChapter(chapter.id)}>{chapter.title}</button>
           {state && <small className={'lv-chapter-state ' + state[1]} title={state[0]}>{state[0]}</small>}
-          {!batch && chapter.hasAudio && <button type="button" className="lv-subtle lv-chapter-listen" aria-label={t("收听") + " · " + chapter.title} onClick={() => listenChapter?.(chapter.id)}>{t("收听")}</button>}
+          {!batch && Boolean(chapter.hasAudio) && <button type="button" className="lv-chapter-listen" aria-label={t("收听") + " · " + chapter.title} onClick={() => listenChapter?.(chapter.id)}><Icon name="Play" size={13}/><span>{t("收听")}</span></button>}
         </div>
       })}</div>
       <div className="lv-inline">
@@ -266,5 +310,12 @@ export function LibraryView({ books, chapters, selectedBook, active, booksQuery,
         {chapters.next && <button onClick={chapters.next}>{t("下一页")}</button>}
       </div>
     </>}
+  </>
+  return <aside className={'lv-shelf' + (mode === 'split' ? ' lv-shelf-split' : '')} aria-label={t("书架")}>
+    {mode === 'split'
+      ? <><div className="lv-shelf-books-pane">{booksPane}</div><div className="lv-shelf-chapters-pane">{chaptersPane}</div></>
+      : mode === 'detail'
+        ? <div className="lv-shelf-chapters-pane">{chaptersPane}</div>
+        : <div className="lv-shelf-books-pane">{booksPane}</div>}
   </aside>
 }

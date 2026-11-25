@@ -88,6 +88,7 @@ export function createProductionService(library, gatewayFor) {
           (key === 'clean' && typeof value !== 'boolean') ||
           (key === 'autoContinue' && typeof value !== 'boolean') ||
           (key === 'chatDock' && !['auto', 'active', 'never'].includes(value)) ||
+          (key === 'miniCapsule' && !['auto', 'playing', 'never'].includes(value)) ||
           (key === 'snippetRetention' && !['1d', '7d', '30d', 'never'].includes(value)) ||
           (key === 'speechVoices' && !validSpeechVoices(value)) ||
           (key === 'laivoxNarratorDefault' && !narratorDefaultShape(value)) ||

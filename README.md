@@ -34,7 +34,7 @@ Make sure the `dsh` command is available:
 dsh plugin --profile desktop add "https://github.com/xiaolai181/dsh_laivox_tts/releases/latest/download/dsh-laivox-tts.tgz"
 ```
 
-This installs a prebuilt package—nothing is compiled locally and no install scripts run. To pin a specific version, replace `latest/download` with `download/v0.7.8` (see [Releases](https://github.com/xiaolai181/dsh_laivox_tts/releases)).
+This installs a prebuilt package—nothing is compiled locally and no install scripts run. To pin a specific version, replace `latest/download` with `download/v0.7.9` (see [Releases](https://github.com/xiaolai181/dsh_laivox_tts/releases)).
 
 ### Offline package install
 

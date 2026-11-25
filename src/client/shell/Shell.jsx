@@ -7,6 +7,7 @@ import { PlanSheet } from '../sheets/PlanSheet.jsx'
 import { ToastRegion } from '../components/Toast.jsx'
 import { LibraryView, ImportPreview } from '../library/LibraryView.jsx'
 import { LibraryScene } from '../library/LibraryScene.jsx'
+import { SHELF_SPLIT_WIDTH, shelfMode, shouldLoadShelfChapters } from '../library/shelfLayout.mjs'
 import { SnippetsView } from '../library/SnippetsView.jsx'
 import { QueueSheet } from '../sheets/QueueSheet.jsx'
 import { SettingsSheet } from '../sheets/SettingsSheet.jsx'
@@ -66,6 +67,7 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
   const [chapterQuery, setChapterQuery] = useState('')
   const [shelfQuery, setShelfQuery] = useState('')
   const [shelfPick, setShelfPick] = useState(null)
+  const [shelfDetail, setShelfDetail] = useState(false)
   const [batch, setBatch] = useState(false)
   const selectingAll = useRef(null)
   const [theme, setTheme] = useState(null)
@@ -76,7 +78,11 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
   const shelfBook = books.value?.books?.find(item => item.id === shelfBookId) ??
     shelfPick ?? (shelfBookId ? { id: shelfBookId, title: chapter.bookTitle } : null)
   const onShelf = scene.scene === 'library' && scene.libraryTab === 'books' && page !== 'import'
-  const shelfChapters = useResults('library/chapters', onShelf ? shelfBookId || false : false, 80,
+  const shelfSplit = width >= SHELF_SPLIT_WIDTH
+  const hasShelfBooks = (books.value?.books?.length ?? 0) > 0
+  const viewShelfMode = shelfMode({ split: shelfSplit, hasBooks: hasShelfBooks, hasSelectedBook: Boolean(shelfBook), detail: shelfDetail })
+  const shelfChapters = useResults('library/chapters',
+    shouldLoadShelfChapters({ onShelf, mode: viewShelfMode, bookId: shelfBookId }) ? shelfBookId : false, 80,
     shelfQuery || shelfBookId !== chapter?.book ? 0 : Math.floor(((chapter?.ordinal ?? 1) - 1) / 80) * 80, w.shelfVersion, shelfQuery)
   const railChapters = useResults('library/chapters', scene.scene !== 'library' || shelfOpen ? w.book || false : false, 80,
     chapterQuery ? 0 : Math.floor(((chapter?.ordinal ?? 1) - 1) / 80) * 80, w.shelfVersion, chapterQuery)
@@ -157,8 +163,23 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
   function notify(message) { w.flashNotice(message) }
   async function save() { try { await w.save(undefined, { preconfirmed: true }) } catch (error) { w.errors(error) } }
   async function saveCreation() { try { await w.save(null) } catch (error) { w.errors(error) } }
+  function exitShelfDetail() {
+    setShelfDetail(false)
+    if (batch) { selectingAll.current?.abort(); w.clearSelection(); setBatch(false) }
+  }
+  function chooseScene(value) {
+    if (value === 'library') exitShelfDetail()
+    scene.setScene(value)
+  }
+  function selectLibraryTab(value) {
+    if (value !== 'books') exitShelfDetail()
+    scene.setLibraryTab(value)
+  }
   async function cancelCreation() {
+    const appending = Boolean(w.appendBook)
     if (!await w.cancelCreation()) return
+    if (appending) setShelfDetail(true)
+    else exitShelfDetail()
     scene.setLibraryTab('books')
     scene.setScene('library')
   }
@@ -166,7 +187,9 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
     setBooksQuery('')
     books.first()
     setShelfPick(book)
+    setShelfDetail(true)
     scene.setLibraryTab('books')
+    scene.setScene('library')
   }
   async function nav(target) {
     if (await w.navigate(target)) { setShelfOpen(false); setTheme(null); scene.closeSheet(); scene.setScene(target.new ? 'studio' : 'listen'); if(target.new)scene.setStudioTab('text') }
@@ -224,6 +247,7 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
   }
 
   const shelf = <LibraryView books={books} chapters={shelfChapters} selectedBook={shelfBook} active={chapter?.id}
+    mode={viewShelfMode} split={shelfSplit} openShelfDetail={() => setShelfDetail(true)} closeShelfDetail={exitShelfDetail} openBook={id => nav({ book: id })}
     booksQuery={booksQuery} changeBooksQuery={setBooksQuery} chapterQuery={shelfQuery} changeChapterQuery={setShelfQuery}
     selectShelfBook={setShelfPick} openChapter={id => nav({ chapter: id })} listenChapter={id => nav({ chapter: id, autoplay: true })} clearAudio={w.clearAudio}
     uploading={uploading} cancelUpload={() => importing.current?.abort()}
@@ -253,7 +277,10 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
       if (saved) setShelfPick(current => current?.id === id ? { ...current, title: title.trim() } : current)
       return saved
     }} deleteBook={async (id, meta) => {
-      if (await w.deleteBook(id, meta)) setShelfPick(current => current?.id === id ? null : current)
+      if (await w.deleteBook(id, meta)) {
+        setShelfPick(current => current?.id === id ? null : current)
+        if (shelfBookId === id) exitShelfDetail()
+      }
     }}/>
 
 
@@ -266,6 +293,7 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
     if(event.defaultPrevented || event.target.closest('dialog,[popover],.lv-sheet'))return
     // Esc closes the open side panel even when focus has moved to the dock.
     if(event.key==='Escape' && (scene.sheet || w.dialog?.kind==='plan')){event.preventDefault();if(w.dialog?.kind==='plan')w.answer(null);else closePanel();return}
+    if(event.key==='Escape' && onShelf && viewShelfMode==='detail' && !event.target.closest('input,textarea,select')){event.preventDefault();exitShelfDetail();return}
     if(event.target.closest('button,a,[role=tab],[role=listbox]'))return
     const action=shortcutAction(event)
     if(!action)return
@@ -284,16 +312,18 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
     <input ref={fileInput} type="file" hidden accept=".txt,.epub,.pdf" onChange={event=>{
       const file=event.target.files[0];event.target.value='';if(file)void openImport(signal=>upload(file,signal))
     }}/>
-    <TopBar chapter={chapter} draftBookTitle={w.appendBook?.title} books={books.value?.books} openBook={id=>nav({book:id})} scene={scene.scene} setScene={scene.setScene} tasks={inProgress} openQueue={()=>openQueue()} openSettings={()=>scene.openSheet('settings')} openRail={()=>setShelfOpen(true)}/>
+    <TopBar chapter={chapter} draftBookTitle={w.appendBook?.title} books={books.value?.books} openBook={id=>nav({book:id})} scene={scene.scene} setScene={chooseScene} tasks={inProgress} openQueue={()=>openQueue()} openSettings={()=>scene.openSheet('settings')} openRail={()=>setShelfOpen(true)}/>
     <div className="lv-shell-body">
       {width>=1024 && scene.scene!=='library' && (chapter || w.booting) && rail}
       <div className="lv-scene-room">
         {w.error && !scene.sheet && scene.sheet !== 'settings' && <div className="lv-inline lv-error" role="alert">{w.error}{w.memory.activeId && !w.creationSaved && <button onClick={()=>w.reloadChapter().then(w.clearError).catch(w.errors)}>{t("重新加载")}</button>}</div>}
         {blockedActions()}
-        {scene.scene==='listen' && <StageScene w={w} player={player} immersive={scene.immersive} setImmersive={scene.setImmersive} navigate={id=>nav({chapter:id})} listenFrom={w.listenFrom} create={()=>nav({new:true})} openImport={()=>fileInput.current.click()} books={books.value?.books} openBook={id=>nav({book:id})} openLibrary={()=>scene.setScene('library')}/>}
+        {scene.scene==='listen' && <StageScene w={w} player={player} immersive={scene.immersive} setImmersive={scene.setImmersive} navigate={id=>nav({chapter:id})} listenFrom={w.listenFrom} create={()=>nav({new:true})} openImport={()=>fileInput.current.click()} books={books.value?.books} openBook={id=>nav({book:id})} openLibrary={()=>chooseScene('library')}/>}
         {scene.scene==='studio' && <StudioScene w={w} player={player} tab={scene.studioTab} change={scene.setStudioTab} roleData={roleData} staleScript={staleScript} saveCreation={saveCreation} cancelCreation={cancelCreation} openQueue={()=>openQueue({chapter:chapter?.id})}/>}
         {scene.scene==='library' && <LibraryScene create={()=>nav({new:true})} creatingDisabled={busy} importFile={()=>fileInput.current.click()} uploading={uploading}
-          tab={page==='import' && w.importEntry ? 'books' : scene.libraryTab} setTab={page==='import' && w.importEntry ? null : scene.setLibraryTab}>
+          tab={page==='import' && w.importEntry ? 'books' : scene.libraryTab} setTab={page==='import' && w.importEntry ? null : selectLibraryTab}
+          compactHeader={scene.libraryTab==='books' && !(page==='import' && w.importEntry) && viewShelfMode==='detail'}
+          split={scene.libraryTab==='books' && !(page==='import' && w.importEntry) && viewShelfMode==='split'}>
           {scene.libraryTab==='snippets' && !(page==='import' && w.importEntry) ? <SnippetsView useSessions={useSessions} version={w.shelfVersion} decide={w.decide} notify={notify}
             open={(chapter,job)=>nav({chapter,job,autoplay:true})} openBook={showOnShelf} forget={w.forgetBooks}
             renamed={book=>{w.refreshShelf();if(chapter?.book===book)void w.refresh().catch(()=>{})}} openSettings={()=>scene.openSheet('settings','storage')}/>
@@ -304,7 +334,7 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
     {!(scene.scene === 'studio' && w.creating) && <SaveBar w={w} save={save}/>}
     <TransportDock player={player} chapter={chapter} view={view} refresh={w.refresh} listenOlder={w.listenOlder} notify={notify} listenFrom={w.listenFrom} clearListen={w.clearListen} jumpBookmark={chapter?.playback?.bookmark?jumpBookmark:null} clearAudio={chapter?.media?.some(part=>part.ready)?()=>w.clearAudio({chapter:chapter.id}):null}/>
     <ToastRegion message={w.notice}/>
-    {shelfOpen && width<1024 && <Overlay title={t("目录")} variant="shelf" close={()=>setShelfOpen(false)} {...appearance}>{rail}<button onClick={()=>{setShelfOpen(false);scene.setScene('library')}}>{t("打开书架")}</button></Overlay>}
+    {shelfOpen && width<1024 && <Overlay title={t("目录")} variant="shelf" close={()=>setShelfOpen(false)} {...appearance}>{rail}<button onClick={()=>{setShelfOpen(false);chooseScene('library')}}>{t("打开书架")}</button></Overlay>}
     {scene.sheet==='queue' && <Sheet title={t("任务")} close={closePanel}>
       <QueueSheet scope={w.queueScope} clearScope={()=>w.setQueueScope(null)} actions={w.actions} refreshKey={activity} decide={w.decide} notify={notify}
         run={async(id,action)=>{await w.jobAction(id,action);bumpActivity(n=>n+1)}} close={closePanel} open={(chapter,job)=>nav({chapter,job})} openStorage={()=>scene.openSheet('settings','storage')}/>

@@ -1,18 +1,44 @@
 
-.lv-library-scene {padding:28px 36px;max-width:1400px;margin:auto;}
-.lv-library-scene .lv-shelf {display:block;overflow:visible;padding:24px 0;border:0;background:transparent;width:auto;}
-.lv-library-scene .lv-books {display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:18px;margin:20px 0;}
-.lv-library-scene .lv-books button {display:flex;flex-direction:column;gap:14px;align-items:stretch;border:1px solid var(--lv-line);padding:14px;background:var(--lv-bg);}
+.lv-library-scene {padding:24px 32px 44px;max-width:1400px;margin:auto;}
+.lv-library-scene.lv-library-detail {padding-top:16px;}
+.lv-library-scene .lv-shelf {display:block;overflow:visible;padding:18px 0 0;border:0;background:transparent;width:auto;}
+.lv-library-scene.lv-library-detail .lv-shelf {padding-top:0;}
+.lv-library-scene .lv-shelf-books-pane,
+.lv-library-scene .lv-shelf-chapters-pane {display:flex;flex-direction:column;gap:12px;min-width:0;}
+.lv-library-scene .lv-books {display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:14px;margin:10px 0;}
+.lv-library-scene .lv-books button {display:flex;flex-direction:column;gap:10px;align-items:stretch;border:1px solid var(--lv-line);padding:10px;background:var(--lv-bg);}
 .lv-library-scene .lv-books button[aria-pressed=true] {border-color:var(--lv-accent);background:var(--lv-surface-2);}
-.lv-library-scene .lv-book-cover {height:135px;width:100%;border-radius:var(--lv-r-s);display:grid;place-items:center;background:var(--lv-surface-2);font:var(--lv-title);font-size:44px;color:var(--lv-ink);border:0;}
+.lv-library-scene .lv-book-cover {position:relative;height:112px;width:100%;border-radius:var(--lv-r-s);display:grid;place-items:center;background:var(--lv-surface-2);font:var(--lv-title);font-size:44px;color:var(--lv-ink);border:0;}
 .lv-library-scene .lv-contents>div {padding:12px;border-bottom:1px solid var(--lv-line);}
-.lv-library-scene .lv-contents-heading {margin-top:26px;}
-@container (max-width:759px) {.lv-library-scene {padding:20px 16px;}.lv-library-scene .lv-books {grid-template-columns:repeat(2,minmax(0,1fr));}.lv-library-scene .lv-book-cover {height:100px;}}
+.lv-ui .lv-contents .lv-chapter-listen {flex:none;display:inline-flex;align-items:center;gap:5px;min-height:28px;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:550;background:var(--lv-elevated);border-color:var(--lv-line-strong);color:var(--lv-ink);white-space:nowrap;}
+.lv-ui .lv-contents .lv-chapter-listen:hover:not(:disabled) {background:var(--lv-play-bg);border-color:var(--lv-play-bg);color:var(--lv-play-fg);}
+.lv-library-scene .lv-contents-heading {margin-top:0;}
+.lv-library-scene .lv-shelf-detail-bar {display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;}
+.lv-ui .lv-shelf-back {display:inline-flex;align-items:center;gap:4px;padding-left:4px;font-weight:600;}
+.lv-library-scene .lv-shelf-detail-heading {margin:0;font-size:1.15rem;}
+.lv-library-scene .lv-shelf-empty-detail {display:grid;place-items:center;min-height:180px;padding:24px;border:1px dashed var(--lv-line);border-radius:var(--lv-r-m);}
 
-.lv-library-scene .lv-book-cover {position:relative;}
+.lv-library-scene.lv-library-split {display:flex;flex-direction:column;min-height:0;padding-left:24px;padding-right:24px;}
+.lv-library-scene .lv-shelf-split {display:grid;grid-template-columns:minmax(270px,340px) minmax(0,1fr);gap:20px;align-items:start;flex:1;min-height:0;padding:14px 0 0;}
+.lv-library-scene .lv-shelf-split .lv-books {grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:4px 0;}
+.lv-library-scene .lv-shelf-split .lv-book-cover {height:92px;}
+.lv-library-scene .lv-shelf-split .lv-shelf-chapters-pane {border-left:1px solid var(--lv-line);padding-left:20px;}
+
+@media (min-height: 520px) {
+  .lv-library-scene.lv-library-split {height:100%;padding-bottom:20px;}
+  .lv-library-scene.lv-library-split .lv-shelf-split {align-items:stretch;overflow:hidden;}
+  .lv-library-scene.lv-library-split .lv-shelf-books-pane,
+  .lv-library-scene.lv-library-split .lv-shelf-chapters-pane {min-height:0;overflow-y:auto;padding-bottom:24px;}
+}
+
+@container (max-width:759px) {
+  .lv-library-scene {padding:16px 14px 40px;}
+  .lv-library-scene .lv-books {grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:8px 0;}
+  .lv-library-scene .lv-book-cover {height:88px;}
+}
+
 .lv-book-cover .lv-role-dot {position:absolute;bottom:10px;left:10px;}
 
-.lv-library-scene {padding-bottom:48px;}
 .lv-import-banner {display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 14px;margin:4px 0 16px;border-radius:var(--lv-r-m);background:var(--lv-surface-2);font-size:13px;color:var(--lv-ink-dim);}
 .lv-import-banner span {margin-right:auto;}
 

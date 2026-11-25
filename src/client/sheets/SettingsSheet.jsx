@@ -39,10 +39,16 @@ function Listening({ values, save }) {
 // shown under the reply either way; this only decides when the bar appears.
 function Conversation({ values, save }) {
   const value = values.chatDock ?? 'auto'
+  const capsuleValue = values.miniCapsule ?? 'auto'
   return <section className="lv-card"><h3>{t("对话工作条")}</h3>
+    <span className="lv-field-label">{t("输入框上方的 LaiVox 栏")}</span>
     <div className="lv-segmented" role="group" aria-label={t("输入框上方的 LaiVox 栏")}>{[['auto', t('自动')], ['active', t('只在待确认或制作中')], ['never', t('不显示')]].map(([key, label]) =>
       <button type="button" key={key} aria-pressed={value === key} onClick={() => { if (value !== key) void save({ chatDock: key }) }}>{label}</button>)}</div>
     <small>{t("控制输入框上方的 LaiVox 栏何时显示。「自动」时也会显示「继续听」；待确认的朗读任务和导入始终显示在回答下方。")}</small>
+    <span className="lv-field-label">{t("右下角迷你播放条")}</span>
+    <div className="lv-segmented" role="group" aria-label={t("右下角迷你播放条")}>{[['auto', t('播放或暂停时')], ['playing', t('仅播放时')], ['never', t('不显示')]].map(([key, label]) =>
+      <button type="button" key={key} aria-pressed={capsuleValue === key} onClick={() => { if (capsuleValue !== key) void save({ miniCapsule: key }) }}>{label}</button>)}</div>
+    <small>{t("离开工作台后右下角悬浮播放条的显示时机；也可随时点条上的 × 关闭。对话消息的即时朗读提示不受影响。")}</small>
   </section>
 }
 

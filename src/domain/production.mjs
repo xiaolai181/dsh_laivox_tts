@@ -12,7 +12,7 @@ export const MAX_RESUBMITS = 2
 export const emotions = ['neutral', 'happy', 'sad', 'angry', 'afraid', 'tense', 'gentle']
 export const narrator = { id: 'narrator', name: '旁白', gender: '', voices: {} }
 export const roleNameKey = name => name.normalize('NFKC').trim().toLowerCase()
-export const defaultSettings = { theme: 'system', skin: 'paper', paragraphPause: true, engine: 'edge', mode: 'reading', clean: false, selection: null, autoContinue: true, audioLimit: 2 * 1024 ** 3, chatDock: 'auto', snippetRetention: '7d', laivoxNarratorDefault: LAIVOX_DEFAULT_NARRATOR,
+export const defaultSettings = { theme: 'system', skin: 'paper', paragraphPause: true, engine: 'edge', mode: 'reading', clean: false, selection: null, autoContinue: true, audioLimit: 2 * 1024 ** 3, chatDock: 'auto', miniCapsule: 'auto', snippetRetention: '7d', laivoxNarratorDefault: LAIVOX_DEFAULT_NARRATOR,
   // Voices for instant speech, by the language of the text.
   speechVoices: { 'zh-CN': 'zh-CN-XiaoxiaoNeural', 'zh-TW': 'zh-TW-HsiaoChenNeural', en: 'en-US-AriaNeural' } }
 
