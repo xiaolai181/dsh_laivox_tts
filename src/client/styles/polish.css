@@ -33,7 +33,8 @@
   border-radius: var(--lv-r-m); scroll-margin-top: 72px;
 }
 .lv-ui .lv-script article:focus-visible { outline: 2px solid var(--lv-accent); outline-offset: 2px; }
-.lv-script-check { grid-column: 1 / -1; }
+.lv-script article:has(.lv-script-check) { grid-template-columns: auto 7.5rem minmax(0, 1fr) auto; }
+.lv-script-check { justify-self: start; align-self: center; }
 .lv-script-who { display: flex; flex-direction: column; gap: 2px; min-width: 0; color: var(--lv-ink-mute); font-size: var(--lv-fs-meta); }
 .lv-script-who span { color: var(--lv-ink); font-weight: 650; }
 .lv-script-main { min-width: 0; }
@@ -44,9 +45,6 @@
 .lv-script-error { display: block; margin-top: 6px; color: var(--lv-danger, var(--lv-warn)); font-size: var(--lv-fs-meta); line-height: 1.5; }
 .lv-script-retake-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-items: center; }
 .lv-script-extra { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-items: center; }
-.lv-script-extra { opacity: 0; }
-.lv-script article:hover .lv-script-extra,
-.lv-script article:focus-within .lv-script-extra { opacity: 1; }
 
 .lv-row-editor {
   opacity: 1; transform: none;
@@ -56,14 +54,17 @@
 @starting-style { .lv-row-editor { opacity: 0; transform: translateY(4px); } }
 
 .lv-studio .lv-role-card {
-  position: relative; display: grid; gap: 8px; align-items: start;
+  position: relative; display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; align-items: start;
   padding: 14px 14px 14px 18px; overflow: hidden;
 }
 .lv-studio .lv-role-card::before {
   content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 4px;
   background: var(--lv-role-color, var(--lv-ink-dim));
 }
+.lv-role-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-width: 0; }
+.lv-role-head > div { min-width: 0; }
 .lv-role-voice { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.lv-role-edge summary { cursor: pointer; color: var(--lv-ink-mute); }
 .lv-ui .lv-role-pick { flex: 1; min-width: 0; display: flex; justify-content: space-between; align-items: center; gap: 8px; text-align: left; }
 .lv-ui .lv-role-pick span { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lv-ui .lv-role-pick small { flex: none; white-space: nowrap; }
@@ -103,13 +104,13 @@
 }
 
 @container workbench (max-width: 759px) {
-  .lv-ui .lv-script article { grid-template-columns: minmax(0, 1fr); }
+  .lv-ui .lv-script article,
+  .lv-script article:has(.lv-script-check) { grid-template-columns: minmax(0, 1fr); }
   .lv-script-actions { align-items: flex-start; }
   .lv-script-retake-actions { justify-content: flex-start; }
-  .lv-script-extra { opacity: 1; }
   .lv-library-scene .lv-books { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 759px), (hover: none) {
-  .lv-ui .lv-script article { grid-template-columns: minmax(0, 1fr); }
-  .lv-script-extra { opacity: 1; }
+  .lv-ui .lv-script article,
+  .lv-script article:has(.lv-script-check) { grid-template-columns: minmax(0, 1fr); }
 }

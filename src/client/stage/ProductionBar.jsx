@@ -71,7 +71,7 @@ function partsLeft(job) {
 
 const ENGINE_NAMES = [['edge', 'Edge'], ['laivox', 'LaiVox']]
 
-export function ProductionBar({ w, compact = false }) {
+export function ProductionBar({ w, compact = false, openQueue }) {
   const chapter = w.chapter
   const job = chapter?.operation
   const active = ACTIVE.includes(job?.state)
@@ -124,7 +124,8 @@ export function ProductionBar({ w, compact = false }) {
         <small>{t("当前音频")}</small>
         <strong>{facts.label}</strong>{facts.note && <span data-warn={facts.stale}>{facts.note}</span>}
       </div>
-      <div className="lv-production-options">
+        <div className="lv-production-options">
+          <small>{t("此后各章的默认")}</small>
         <div className="lv-segmented lv-production-mode" role="group" aria-label={t("发声引擎")}>
           {ENGINE_NAMES.map(([value, label]) => <button key={value} type="button" aria-pressed={shownEngine === value}
             title={value === 'laivox' ? t('推荐使用 · 增值付费，需 API Key（支持会员额度或朗读时长包）') : t('内置在线语音 · 无需账号')}
@@ -147,6 +148,7 @@ export function ProductionBar({ w, compact = false }) {
             <button disabled={w.busy || active} onClick={() => { close(); void start('clean') }}>{chapter.editorial?.cleaned ? t('重新清洗正文') : t('仅清洗正文')}</button>
             {w.options.mode === 'multi' && <button disabled={w.busy || active} onClick={() => { close(); void start('cast') }}>{chapter.editorial?.cast ? t('重新编剧（不合成）') : t('只编剧，先检查台词')}</button>}
             <button disabled={w.busy || active} onClick={() => { close(); void start('generate', { showPlan: true }) }}>{t("预览制作方案")}</button>
+            {openQueue && <button onClick={() => { close(); openQueue() }}>{t("查看本章任务")}</button>}
           </div>}
         </Popover>
       </div>

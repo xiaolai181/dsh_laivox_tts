@@ -173,6 +173,9 @@ function setVoiceRule({ book, rule, baseRolesRev } = {}) {
   if (row.roles_rev !== baseRolesRev) throw fault('VERSION_CONFLICT')
   if (activeJobsForBook(book).length) throw fault('BOOK_BUSY')
   run('UPDATE books SET voice_rule=?,roles_rev=roles_rev+1 WHERE id=?', rule, book)
+  // Same book-wide revision as a gender or age change, so existing audio reads as
+  // out of date. Chapters whose voices did not move still reuse their audio.
+  run('UPDATE chapters SET rev=rev+1 WHERE book=?', book)
   return { voiceRule: rule, rolesRev: row.roles_rev + 1 }
 }
 

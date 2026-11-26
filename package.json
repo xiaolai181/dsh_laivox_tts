@@ -1,6 +1,6 @@
 {
   "name": "dsh-laivox-tts",
-  "version": "0.7.10",
+  "version": "0.7.11",
   "private": false,
   "description": "把 TXT、EPUB、PDF 小说做成单人朗读或多角色有声书，也能一键朗读对话里的 AI 回答，支持本地书架与 MP3/WAV 导出。",
   "license": "MIT",

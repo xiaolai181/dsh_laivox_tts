@@ -247,18 +247,82 @@ export function useWorkbench(player, navigation, memory) {
       await refresh().catch(() => {})
     }
   }
+  // A role-only save (or a voice-rule upgrade) bumps this chapter without
+  // rewriting its text or script. Drafts still based on the revision we just
+  // replaced move onto the new base; a draft that was already stale stays put.
+  function liftDraftBases(chapterId, beforeRev, committed) {
+    if (!committed || committed.rev !== beforeRev + 1) return false
+    const next = { rev: committed.rev, rolesRev: committed.rolesRev, editorialResultJob: committed.editorialResultJob ?? null }
+    let moved = false
+    const body = memory.drafts.get(chapterId)
+    if (body?.base?.rev === beforeRev) { memory.drafts.set(chapterId, { ...body, base: next }); moved = true }
+    const script = memory.scripts.get(chapterId)
+    if (script?.base?.rev === beforeRev) { memory.scripts.set(chapterId, { ...script, base: next }); moved = true }
+    return moved
+  }
+  // Name, gender and age save on their own. The body must not include the open
+  // text or script, and the operation key must not collide with a chapter save.
+  async function saveRoleProfile(patch) {
+    const current = active.current?.view
+    if (!current || !patch?.id) return { ok: false, reason: 'failed' }
+    const key = 'role-profile:' + current.book + ':' + patch.id
+    if (busyRef.current.has(key)) return { ok: false, reason: 'busy' }
+    const before = chapterBase(current)
+    const body = { id: current.id, book: current.book, base: before, patch: { roles: [patch] } }
+    busyRef.current.add(key)
+    repaint()
+    try {
+      let committed
+      let rejoined = false
+      try {
+        committed = (await operation(key, 'production/save', { body, snapshot: null })).result
+      } catch (error) {
+        if (error?.message !== 'TASKS_BLOCK_SAVE') throw error
+        const decision = await stopBlockingTasks(error.details, {})
+        if (!decision) { errors(error); return { ok: false, reason: 'dismissed' } }
+        committed = (await operation(key, 'production/save', { body, snapshot: null })).result
+        if (decision.stopped?.length) { offerRejoin(decision.stopped); rejoined = true }
+      }
+      liftDraftBases(current.id, before.rev, committed)
+      await refresh().catch(() => {})
+      setBlocked(null)
+      setError('')
+      if (!rejoined) flashNotice(deferText(() => t('修改已保存')))
+      return { ok: true, id: patch.id }
+    } catch (error) {
+      if (error?.message === 'OPERATION_PENDING') return { ok: false, reason: 'pending', error }
+      if (error?.message === 'VERSION_CONFLICT') {
+        await refresh().catch(() => {})
+        return { ok: false, reason: 'conflict', error }
+      }
+      return { ok: false, reason: 'failed', error }
+    } finally {
+      busyRef.current.delete(key)
+      repaint()
+    }
+  }
   // Moves the book to the latest automatic voice rule after the user confirmed.
   async function upgradeVoiceRule() {
     const current = active.current?.view
     if (!current) return false
+    const before = chapterBase(current)
+    const text = current.text
+    const editorialResultJob = current.editorialResultJob ?? null
+    let ok = false
     try {
       await post('book/voice-rule', { book: current.book, rule: 2, baseRolesRev: current.rolesRev })
+      ok = true
       flashNotice(deferText(() => t('已改用新的自动分配规则')))
       return true
     } catch (error) {
       flashNotice(deferText(() => explain(error)))
       return false
-    } finally { await refresh().catch(() => {}) }
+    } finally {
+      const fresh = await refresh().catch(() => null)
+      if (ok && fresh && fresh.rev === before.rev + 1 && fresh.text === text && (fresh.editorialResultJob ?? null) === editorialResultJob) {
+        if (liftDraftBases(current.id, before.rev, { rev: fresh.rev, rolesRev: fresh.rolesRev, editorialResultJob: fresh.editorialResultJob ?? null })) repaint()
+      }
+    }
   }
   function discardRoles() {
     memory.roles.delete(book)
@@ -1327,7 +1391,7 @@ export function useWorkbench(player, navigation, memory) {
     notice, setNotice, clearNotice, flashNotice, openUsageDayAction, errors, clearError: () => { setError(''); setBlocked(null) }, blocked, decide, dialog, answer, memory, selection, setSelection, shelfVersion,
     selectRows, invertRows, clearSelection, selectBook,
     importEntry, showImport, jobCounts, actions, jobAction, queueScope, setQueueScope,
-    navigate, cancelCreation, refresh, listenOlder, reloadChapter, save, generate, listenFrom, clearListen, editDraft, editScript, editRole, saveRoleVoice, upgradeVoiceRule, discardRoles, chooseRoleConflict, clearAudio,
+    navigate, cancelCreation, refresh, listenOlder, reloadChapter, save, generate, listenFrom, clearListen, editDraft, editScript, editRole, saveRoleVoice, saveRoleProfile, upgradeVoiceRule, discardRoles, chooseRoleConflict, clearAudio,
     renameBook, deleteBook, forgetBooks, exportState, exportFormat, setExportFormat, exportBook, cancelExport, compact,
     refreshShelf: () => changeShelf(n => n + 1),
   }

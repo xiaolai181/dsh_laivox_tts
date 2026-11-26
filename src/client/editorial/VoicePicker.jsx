@@ -28,7 +28,7 @@ const LOCKED = '当前账号状态下暂不可用于合成'
 
 // choose(voice) saves the voice and may reject; the panel stays open to show why.
 // draftOnly: the role exists only in the unsaved draft, so the voice joins the draft.
-export function VoicePicker({ engine, directory, voice, choose, close, player, notify, draftOnly = false, book, roleName = '', narrator = false }) {
+export function VoicePicker({ engine, directory, voice, choose, close, player, notify, draftOnly = false, book, roleName = '', narrator = false, automatic = '', automaticName = '' }) {
   const { voices, problem: directoryError, reload, refresh } = directory
   const [selection, setSelection] = useState(voice)
   const [query, setQuery] = useState('')
@@ -116,7 +116,7 @@ export function VoicePicker({ engine, directory, voice, choose, close, player, n
   const row = item => <div className="lv-voice-row" key={item.id} title={item.usable === false ? t(LOCKED) : undefined}>
     <label className="lv-choice" title={item.name ?? item.id}><input type="radio" name="lv-voice" checked={selection === item.id} disabled={item.usable === false}
       onChange={() => { stop(); setSelection(item.id) }}/><span>{item.name || item.id}</span>
-      {<small>{item.owner === 'mine' ? (item.usable === false ? t(LOCKED) : '') : [item.id.startsWith('en-US') ? t('美式英语') : item.id.startsWith('en-GB') ? t('英式英语') : item.id.startsWith('zh-TW') ? t('繁体中文') : '', item.age === 'child' ? t('童声') : '', item.auto === false ? t('口音，需手动选择') : ''].filter(Boolean).join(' · ')}</small>}</label>
+      {<small>{[item.owner === 'mine' ? (item.usable === false ? t(LOCKED) : '') : [item.id.startsWith('en-US') ? t('美式英语') : item.id.startsWith('en-GB') ? t('英式英语') : item.id.startsWith('zh-TW') ? t('繁体中文') : '', item.age === 'child' ? t('童声') : '', item.auto === false ? t('口音，需手动选择') : ''].filter(Boolean).join(' · '), automatic && item.id === automatic ? t('本章自动结果') : ''].filter(Boolean).join(' · ')}</small>}</label>
     <button type="button" aria-label={playing?.id === item.id ? t("停止试听 {v1}", { v1: item.name ?? item.id }) : t("试听 {v1}", { v1: item.name ?? item.id })}
       onClick={() => play(item.id)}>{playing?.id === item.id ? (playing.loading ? t('取消试听') : t('停止')) : t('试听')}</button>
   </div>
@@ -129,7 +129,7 @@ export function VoicePicker({ engine, directory, voice, choose, close, player, n
       {engine === 'laivox' && ages.length > 0 && <label>{t("年龄")}<select value={age} onChange={event => { setAge(event.target.value); setPage(0) }}>
         <option value="">{t("全部")}</option>{ages.map(item => <option key={item}>{item}</option>)}
       </select></label>}</div>
-      <label className="lv-choice lv-voice-auto"><input type="radio" name="lv-voice" checked={!selection} onChange={() => { stop(); setSelection('') }}/><span>{laivoxNarrator ? t('使用默认旁白') : t('自动分配')}</span></label>
+      <label className="lv-choice lv-voice-auto"><input type="radio" name="lv-voice" checked={!selection} onChange={() => { stop(); setSelection('') }}/><span>{laivoxNarrator ? (automaticName ? t('使用默认旁白（本章当前：{name}）', { name: automaticName }) : t('使用默认旁白')) : (automaticName ? t('自动分配（本章当前：{name}）', { name: automaticName }) : t('自动分配'))}</span></label>
       {voices === null && !directoryError && <p role="status">{t("正在读取音色…")}</p>}
       {directoryError && <p role="alert" className="lv-error">{directoryError} <button onClick={reload}>{t("重新加载")}</button></p>}
       {problem && <p role="alert" className="lv-error">{displayText(problem)}</p>}

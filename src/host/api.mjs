@@ -159,7 +159,7 @@ export function liveProjection(job, parts) {
   }
 }
 
-async function chapterProjection(library, id, requestedJob, detail = true) {
+export async function chapterProjection(library, id, requestedJob, detail = true) {
   const chapter = detail ? await library.chapterDetail(id) : await library.chapterHeader(id)
   if (!chapter) throw new Error('CHAPTER_NOT_FOUND')
   if (!detail && chapter.playback) chapter.playback = JSON.parse(chapter.playback)

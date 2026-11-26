@@ -36,7 +36,7 @@
 dsh plugin --profile desktop add "https://github.com/xiaolai181/dsh_laivox_tts/releases/latest/download/dsh-laivox-tts.tgz"
 ```
 
-安装的是预构建插件包，无需在本地编译或授权构建脚本。如需锁定版本，可将 `latest/download` 替换为 `download/v0.7.10`（全部版本见 [Releases](https://github.com/xiaolai181/dsh_laivox_tts/releases)）。
+安装的是预构建插件包，无需在本地编译或授权构建脚本。如需锁定版本，可将 `latest/download` 替换为 `download/v0.7.11`（全部版本见 [Releases](https://github.com/xiaolai181/dsh_laivox_tts/releases)）。
 
 ### 离线安装包安装
 

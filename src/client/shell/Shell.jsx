@@ -331,7 +331,7 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
         </LibraryScene>}
       </div>
     </div>
-    {!(scene.scene === 'studio' && w.creating) && <SaveBar w={w} save={save}/>}
+    {!(scene.scene === 'library' || (scene.scene === 'studio' && w.creating)) && <SaveBar w={w} save={save}/>}
     <TransportDock player={player} chapter={chapter} view={view} refresh={w.refresh} listenOlder={w.listenOlder} notify={notify} listenFrom={w.listenFrom} clearListen={w.clearListen} jumpBookmark={chapter?.playback?.bookmark?jumpBookmark:null} clearAudio={chapter?.media?.some(part=>part.ready)?()=>w.clearAudio({chapter:chapter.id}):null}/>
     <ToastRegion message={w.notice} onDismiss={w.clearNotice}/>
     {shelfOpen && width<1024 && <Overlay title={t("目录")} variant="shelf" close={()=>setShelfOpen(false)} {...appearance}>{rail}<button onClick={()=>{setShelfOpen(false);chooseScene('library')}}>{t("打开书架")}</button></Overlay>}

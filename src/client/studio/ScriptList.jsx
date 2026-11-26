@@ -15,9 +15,11 @@ import { productionView } from '../workbench/productionView.mjs'
 import { previewChannel } from '../player/previewChannel.mjs'
 import { rovingIndex } from './roving.mjs'
 import { pauseActionSpec } from '../workbench/pauseNotice.mjs'
+import { useVoiceDirectory, VoicePicker } from '../editorial/VoicePicker.jsx'
+import { effectiveVoices, narratorDefaultFor } from './voiceLabels.mjs'
 
 const labels = { neutral: '平静', happy: '喜悦', sad: '悲伤', angry: '愤怒', afraid: '害怕', tense: '紧张', gentle: '温柔' }
-export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, notify, busy, player, newRole, options, generate, jobAction, actions, openSettings, openRoles, openDay, packPage }) {
+export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, notify, busy, player, newRole, options, generate, jobAction, actions, openSettings, openRoles, openDay, packPage, focus, onFocusApplied, pendingCount = 0, confirmSave, saveVoice, narratorSetting, keyInfo }) {
   const listRef = useRef(null)
   const [roleFilter, setRoleFilter] = useState('')
   const [search, setSearch] = useState('')
@@ -27,6 +29,7 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
   const [page, setPage] = useState(0)
   const [query, setQuery] = useState('')
   const [editing, setEditing] = useState(null)
+  const [picking, setPicking] = useState(null)
   const [rowFocus, setRowFocus] = useState(0)
   const [plan, setPlan] = useState(null)
   const [planTry, setPlanTry] = useState(0)
@@ -47,6 +50,17 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
   const view = productionView(chapter, options)
   const mode = view.shown.mode
   const engine = view.shown.engine
+  const directory = useVoiceDirectory(engine)
+  const narratorDefault = narratorDefaultFor(engine, keyInfo?.account, directory.voices, narratorSetting)
+  const assigned = useMemo(() => effectiveVoices(chapter, roles, directory.voices, engine, chapter?.voiceRule, narratorDefault), [chapter, roles, directory.voices, engine, narratorDefault])
+  const keyMissing = engine === 'laivox' && keyInfo?.configured === false
+  useEffect(() => {
+    if (!focus?.token) return undefined
+    if (focus.roleId) setRoleFilter(focus.roleId)
+    if (focus.partId) setEditing(focus.partId)
+    onFocusApplied?.()
+    return undefined
+  }, [focus?.token])
   useEffect(() => {
     if (!chapter?.id) return
     const abort = new AbortController()
@@ -140,6 +154,21 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
       else if (result?.reason === 'pending') notify(deferText(() => t('上一次制作还在确认，请稍候')))
     } catch (error) { notify(deferText(() => explain(error))) }
   }
+  async function saveAndRetake(part) {
+    if (pendingCount > 1) {
+      const choice = await confirmSave?.({
+        title: deferText(() => t('保存并重做本句？')),
+        text: deferText(() => t('会一并保存 {count} 处修改，只重做这一句。', { count: pendingCount })),
+        choices: [['save', deferText(() => t('保存并重做'))], [null, deferText(() => t('取消'))]],
+      })
+      if (choice !== 'save') return
+    }
+    try {
+      const result = await generate?.('generate', false, '', { only: { start: part.start, end: part.end }, focusStart: part.start, clean: false })
+      if (result?.reason === 'busy') notify(deferText(() => t('正在处理上一个操作')))
+      else if (result?.reason === 'pending') notify(deferText(() => t('上一次制作还在确认，请稍候')))
+    } catch (error) { notify(deferText(() => explain(error))) }
+  }
   const retakeStateOf = part => rowRetakeState(part, chapter.operation, mode, engine)
   const removedDirty = Boolean(draft) && [...new Set([...(chapter.editorial?.removed ?? []), ...(state.removed ?? [])])].some(id => new Set(chapter.editorial?.removed ?? []).has(id) !== new Set(state.removed ?? []).has(id))
   const retakeBlock = chapter.operation && ['queued', 'running'].includes(chapter.operation.state) ? t('本章制作结束后可以重新合成')
@@ -163,7 +192,9 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
   useEffect(() => { listRef.current?.scrollIntoView({block:'nearest'}) },[page])
   function batchChange(patch) {
     const sourceIds = groups.filter(part => selection.has(part.id)).flatMap(part => part.sourceIds)
+    if (!sourceIds.length) return
     change({sourceIds}, patch)
+    notify(deferText(() => t('已写入草稿，尚未保存')))
   }
   const max = Math.max(0, Math.ceil(filtered.length / 100) - 1)
   const shown = Math.min(page, max)
@@ -198,6 +229,27 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
   const searchKey = roleNameKey(query)
   const listedRoles = split.inChapter.filter(role => roleMatchesQuery(role, searchKey))
   const roleIds = new Map(roles.map(role => [role.id, role]))
+  function lineVoice(roleId) {
+    if (!directory.voices || keyMissing) return t('自动')
+    const role = roleIds.get(roleId)
+    const manual = role?.voices?.[engine]
+    const id = manual || assigned?.get(roleId) || ''
+    if (!id) return t('自动')
+    const name = directory.voices.find(voice => voice.id === id)?.name || id
+    if (manual || (roleId === 'narrator' && narratorDefault && id === narratorDefault.voiceId)) return name
+    return t('自动 · {name}', { name })
+  }
+  const pickerAutomatic = useMemo(() => {
+    if (!picking) return ''
+    const stripped = roles.map(role => {
+      if (role.id !== picking) return role
+      const voices = { ...role.voices }
+      delete voices[engine]
+      return { ...role, voices }
+    })
+    return effectiveVoices(chapter, stripped, directory.voices, engine, chapter?.voiceRule, narratorDefault)?.get(picking) || ''
+  }, [picking, roles, chapter, directory.voices, engine, narratorDefault])
+  const canPickVoice = roleId => !keyMissing && Boolean(saveVoice) && (roleId === 'narrator' || chapter.roles?.some(role => role.id === roleId))
   function controls(part, label) {
     return <ScriptRowEditor part={part} roles={listedRoles} others={split.others} disabled={readOnly} label={label} change={patch=>change(part,patch)} newRole={newRole} engine={engine}/>
   }
@@ -236,7 +288,7 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
       const pauseSpec = facts.retakeState === 'paused' ? pauseActionSpec(op?.laivoxPause, packPage) : null
       return <article key={part.id} tabIndex={selecting ? undefined : (index === focusIndex ? 0 : -1)} style={{'--lv-role-color':roleColor(part.roleId)}} data-dialogue={part.roleId !== 'narrator'} onFocus={() => setRowFocus(index)}>
         {selecting && <input className="lv-script-check" type="checkbox" aria-label={t("选择第 {v1} 段", { v1: number })} checked={selection.has(part.id)} onChange={e=>setSelection(current=>{const next=new Set(current);if(e.target.checked) next.add(part.id);else next.delete(part.id);return next})}/>}
-        <div className="lv-script-who"><span>{number} · {speaker}</span><small>{part.intensity===2?t('强烈 · '):''}{t(labels[emotion])}</small></div>
+        <div className="lv-script-who"><span>{number} · {speaker}</span><small>{part.intensity===2?t('强烈 · '):''}{t(labels[emotion])}</small><small>{lineVoice(roleId)}{canPickVoice(roleId) && <button type="button" className="lv-link" disabled={busy} onClick={() => setPicking(roleId)}>{t('换音色')}</button>}</small></div>
         <div className="lv-script-main">
           <p>{part.text}</p>
           <button className="lv-direction" onClick={()=>setEditing(part.id)}>{part.instruct ? '— '+part.instruct : t('旧版语气')}</button>
@@ -266,6 +318,7 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
             <button type="button" className="lv-subtle" disabled={Boolean(opPending)} aria-label={t('重试重新合成第 {v1} 段', { v1: number })} onClick={() => void jobAction(op.id, 'resume')}>{opPending === 'resume' ? t('正在继续') : t('重试')}</button>
             <button type="button" className="lv-subtle" disabled={Boolean(opPending)} aria-label={t('取消重新合成第 {v1} 段', { v1: number })} onClick={() => void jobAction(op.id, 'cancel')}>{opPending === 'cancel' ? t('正在取消') : t('取消')}</button>
           </span>}
+          {facts.changed && mode !== 'reading' && <button disabled={busy} onClick={() => void saveAndRetake(part)}>{t('保存并重做本句')}</button>}
           <span className="lv-script-extra">
             {ready && <button className="lv-script-preview" aria-label={t("试听第 {v1} 段", { v1: number })} onClick={() => previewRow(part)}><Icon name="Play"/></button>}
             {ready && engine === 'laivox' && !facts.retakeState && <button className="lv-subtle" disabled={busy || Boolean(retakeBlock)}
@@ -279,5 +332,9 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
       {shown > 0 && <button onClick={() => setPage(shown - 1)}>{t("上一页")}</button>}
       {shown < max && <button onClick={() => setPage(shown + 1)}>{t("下一页")}</button>}
     </div>
+    {picking && <VoicePicker engine={engine} directory={directory} voice={roles.find(role => role.id === picking)?.voices?.[engine] ?? ''} narrator={picking === 'narrator'}
+      automatic={pickerAutomatic} automaticName={directory.voices?.find(voice => voice.id === pickerAutomatic)?.name || pickerAutomatic}
+      book={chapter.book} roleName={roleDisplayName(roleIds.get(picking) ?? { id: picking, name: '' })} close={() => setPicking(null)} player={player} notify={notify}
+      choose={(voice, extra) => saveVoice(picking, engine, voice, extra)}/>}
   </section>
 }

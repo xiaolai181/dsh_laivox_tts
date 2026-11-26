@@ -53,10 +53,11 @@ export function ProseView({ chapter, player, notify, onSeek }) {
   const here = playing.chapter === chapter?.id && (playing.phase !== 'idle' || playing.offset > 0 || playing.n > 0)
   const part = here ? playing.segments[playing.n] : undefined
   const offset = useSmoothOffset(playing, here)
-  const marks = useMarks(here && !playing.stale ? playing.job : null, playing.n, part?.ready, playing.segments[playing.n + 1]?.ready)
-  // Old audio after the text changed: its offsets point into the old text, so
-  // only the paragraph is marked, approximately.
-  const stale = here && Boolean(playing.stale ?? chapter?.playbackStale)
+  // A voice-only revision keeps the same words at the same offsets, so following
+  // can stay. Anything else (including an unknown reason) still treats the old
+  // audio as unaligned with the text.
+  const stale = here && Boolean(playing.stale ?? chapter?.playbackStale) && chapter?.staleReason !== 'edit'
+  const marks = useMarks(here && !stale ? playing.job : null, playing.n, part?.ready, playing.segments[playing.n + 1]?.ready)
   let span = null
   if (part && !stale && Number.isFinite(part.start) && Number.isFinite(part.end) && part.end > part.start) {
     const text = part.text ?? original.slice(part.start, part.end)

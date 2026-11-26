@@ -25,8 +25,24 @@ export function SaveBar({ w, save, blocked }) {
   const view = productionView(w.chapter, w.options)
   const rolesOnly = Boolean(w.roleDraft) && !textEdits(w.draft) && !w.scriptDraft
   const consequence = [view.locks.save, rolesOnly ? t('音色改动影响全书，其他章节需要各自更新') : ''].filter(Boolean).join(' · ')
+  const kinds = [textEdits(w.draft) ? 'text' : '', w.scriptDraft ? 'script' : '', w.roleDraft ? 'roles' : ''].filter(Boolean)
+  const kindLabel = kind => kind === 'text' ? t('放弃正文') : kind === 'script' ? t('放弃台词') : t('放弃配音')
+  function applyDiscard(choice) {
+    if (choice === 'all' || choice === 'text') w.editDraft({})
+    if (choice === 'all' || choice === 'script') w.editScript(null)
+    if (choice === 'all' || choice === 'roles') w.discardRoles()
+  }
+  async function discard() {
+    if (kinds.length > 1) {
+      const choice = await w.decide({ title: deferText(() => t('放弃哪一类修改？')), text: deferText(() => t('被放弃的修改无法恢复。')), choices: [...kinds.map(kind => [kind, deferText(kindLabel.bind(null, kind))]), ['all', deferText(() => t('全部放弃'))], [null, deferText(() => t('继续编辑'))]], destructive: true })
+      if (choice) applyDiscard(choice)
+      return
+    }
+    if (await w.decide({ title: deferText(() => t('放弃未保存的修改？')), text: deferText(() => t('这次修改会丢失，无法恢复。')), choices: [['discard', deferText(() => t('放弃修改'))], [null, deferText(() => t('继续编辑'))]], destructive: true }) !== 'discard') return
+    applyDiscard(kinds[0] || 'all')
+  }
   return <div className="lv-save-bar" role="region" aria-label={t("未保存修改")}><span>{t('{types}有 {count} 处修改未保存', { types: types.join(t('、')), count: changes.count })}{changes.groups>0 && !w.roleDraft ? t(" · 约 {v1} 段台词受影响", { v1: changes.groups }) : ''}{consequence && <small>{consequence}</small>}</span>
-    <button disabled={w.busy} onClick={async()=>{if(await w.decide({title:deferText(() => t('放弃未保存的修改？')),text:deferText(() => t('正文、台词和配音的修改都会丢失，无法恢复。')),choices:[['discard',deferText(() => t('放弃修改'))],[null,deferText(() => t('继续编辑'))]],destructive:true})!=='discard')return;w.editDraft({});w.editScript(null);w.discardRoles()}}>{t("放弃")}</button>
+    <button disabled={w.busy} onClick={() => void discard()}>{t("放弃")}</button>
     <button disabled={w.busy} onClick={save}>{t("保存修改")}</button>
     <button className="lv-save-action" disabled={w.busy} onClick={() => void w.generate('generate', false, '', { clean: false, preconfirmed: true })}>{rolesOnly ? t('保存并更新本章音频') : view.audio.has ? t('保存并更新音频') : t('保存并开始制作')}</button>{blocked}</div>
 }
