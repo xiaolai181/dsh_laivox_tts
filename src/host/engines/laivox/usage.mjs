@@ -8,8 +8,34 @@
 const featureOn = status => status?.features?.usage === true
 
 const minutes = value => typeof value === 'number' && Number.isFinite(value) ? value : null
+const safeNonNegInt = value => typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null
 const text = value => typeof value === 'string' ? value : null
 const ledgerOf = value => value === 'pack' ? 'pack' : 'membership'
+
+function amountsFrom(granted, billed, reserved, remaining) {
+  const g = safeNonNegInt(granted)
+  const b = safeNonNegInt(billed)
+  const rsv = safeNonNegInt(reserved)
+  const rem = safeNonNegInt(remaining)
+  if (!g || b === null || rsv === null || rem === null) return null
+  return { granted: g, billed: b, reserved: rsv, remaining: rem }
+}
+
+function poolAmounts(data, tts) {
+  const poolTts = data?.pool?.tts
+  return amountsFrom(poolTts?.granted, poolTts?.billed, poolTts?.reserved, poolTts?.remaining)
+    ?? amountsFrom(tts.nominal_per_day, tts.billed, tts.reserved, tts.remaining)
+}
+
+function dayAmounts(tts, state, daysAuthorized) {
+  if (state !== 'active' && state !== 'provisional') return null
+  if (!Number.isSafeInteger(daysAuthorized) || daysAuthorized <= 0) return null
+  const nominal = safeNonNegInt(tts.nominal_per_day)
+  if (!nominal) return null
+  const granted = nominal * daysAuthorized
+  if (!Number.isSafeInteger(granted) || granted <= 0) return null
+  return amountsFrom(granted, tts.billed, tts.reserved, tts.remaining)
+}
 
 // The pool block of the gateway's usage answer (pool accounts and pack keys).
 function poolView(pool) {
@@ -28,18 +54,27 @@ export function usageView(data) {
   const tts = data?.tts ?? {}
   const window = data?.window ?? null
   const authorize = data?.authorize ?? {}
+  const model = data?.model === 'pool' ? 'pool' : 'day'
+  const state = typeof data?.state === 'string' ? data.state : 'none'
+  const unlimited = tts.unlimited === true
+  const daysAuthorized = Number.isInteger(window?.days_authorized) ? window.days_authorized : 0
+  const nominalPerDay = !unlimited && safeNonNegInt(tts.nominal_per_day) > 0 ? tts.nominal_per_day : null
+  const amounts = unlimited || state === 'hold' ? null
+    : model === 'pool' ? poolAmounts(data, tts) : dayAmounts(tts, state, daysAuthorized)
   return {
-    model: data?.model === 'pool' ? 'pool' : 'day',
+    model,
     ledger: ledgerOf(data?.ledger),
-    pool: data?.model === 'pool' ? poolView(data?.pool) : null,
-    state: typeof data?.state === 'string' ? data.state : 'none',
+    pool: model === 'pool' ? poolView(data?.pool) : null,
+    state,
     plan: typeof data?.plan === 'string' ? data.plan : 'none',
-    unlimited: tts.unlimited === true,
+    unlimited,
     minutesLeft: minutes(tts.minutes_left),
     remainingPct: minutes(tts.remaining_pct),
-    usedUp: tts.unlimited !== true && minutes(tts.remaining) !== null && minutes(tts.remaining) <= 0,
+    usedUp: !unlimited && minutes(tts.remaining) !== null && minutes(tts.remaining) <= 0,
+    amounts,
+    nominalPerDay,
     windowId: typeof window?.id === 'string' ? window.id : '',
-    daysAuthorized: Number.isInteger(window?.days_authorized) ? window.days_authorized : 0,
+    daysAuthorized,
     dayIndex: Number.isInteger(window?.current_day_index) ? window.current_day_index : 0,
     endsAt: typeof window?.effective_ends_at === 'string' ? window.effective_ends_at : (typeof window?.ends_at === 'string' ? window.ends_at : null),
     daysAvailable: Number.isInteger(data?.balance?.days_available) ? data.balance.days_available : null,

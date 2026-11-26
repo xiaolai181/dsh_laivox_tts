@@ -6,7 +6,7 @@ import { RETENTION_CHOICES, shortenWarning } from '../library/snippets.mjs'
 import { ModelOptions } from '../editorial/ModelOptions.jsx'
 import { MODE_NAMES } from '../stage/ProductionBar.jsx'
 import { engineSettingNote } from '../workbench/enginePitch.mjs'
-import { deniedLine, ledgerLine, openUsageDay, shortDate, usageLine } from '../workbench/laivox.mjs'
+import { deniedLine, ledgerLine, openUsageDay, packPriceLine, shortDate, usageBreakdown, usageLine } from '../workbench/laivox.mjs'
 import { previewChannel } from '../player/previewChannel.mjs'
 import { ActivityMark, LevelBar, StorageUsage } from '../components/Metrics.jsx'
 import { Icon } from '../components/Icon.jsx'
@@ -296,6 +296,9 @@ function NarratorDefault({ account, values, save }) {
   </div>
 }
 
+// Host describe(ref) sources that come from launch environment or .env rather than the writable credential store.
+const EXTERNAL_KEY_SOURCES = new Set(['env', 'project-env', 'user-env'])
+
 // LaiVox account card: shown once LaiVox is chosen, a key was saved, or the
 // user opens the collapsed LaiVox intro. It talks to LaiVox only while mounted.
 function LaivoxCard({ keyInfo, reloadKey, decide, values, save, embedded = false }) {
@@ -325,15 +328,23 @@ function LaivoxCard({ keyInfo, reloadKey, decide, values, save, embedded = false
       if (!value?.account) throw new Error('SERVICE_UNAVAILABLE')
       const sameLedger = previous => previous?.key === keyInfo && previous.status?.account === value.account && previous.status.ledger === value.ledger
       setReading(previous => value.features?.usage && value.synthesisAllowed !== false && sameLedger(previous)
-        ? { ...previous, status: value }
+        ? { ...previous, status: value, ...(value.features?.pack === true ? {} : { packCatalog: null }) }
         : { key: keyInfo, status: value })
+      if (value.features?.pack === true) {
+        void get('laivox/pack-catalog', {}, request.signal)
+          .then(res => {
+            if (request.signal.aborted || res?.status !== 'ok' || !res.catalog?.available) return
+            setReading(previous => previous?.key === keyInfo ? { ...previous, packCatalog: res.catalog } : previous)
+          })
+          .catch(() => {})
+      }
       if (value.features?.usage && value.synthesisAllowed !== false) {
         const read = await get('laivox/usage', { account: value.account }, request.signal)
         if (request.signal.aborted) return
         if (read?.status === 'ok' && read.usage && (!value.ledger || !read.usage.ledger || value.ledger === read.usage.ledger)) {
-          setReading({ key: keyInfo, status: value, usage: read.usage, at: Date.now() })
+          setReading(previous => ({ ...(previous?.key === keyInfo ? previous : {}), key: keyInfo, status: value, usage: read.usage, at: Date.now() }))
         } else {
-          setReading({ key: keyInfo, status: value, error: deferText(() => t('用量暂时无法读取，请稍后重试。')) })
+          setReading(previous => ({ ...(previous?.key === keyInfo ? previous : {}), key: keyInfo, status: value, error: deferText(() => t('用量暂时无法读取，请稍后重试。')) }))
         }
       }
     } catch (error) {
@@ -371,7 +382,16 @@ function LaivoxCard({ keyInfo, reloadKey, decide, values, save, embedded = false
       statusRequest.current?.abort()
       setReading(null)
       await reloadKey(next)
-      setMessage(deferText(() => t('Key 已清除')))
+      if (next?.configured === true) {
+        if (EXTERNAL_KEY_SOURCES.has(next.source)) {
+          setMessage(deferText(() => t('已清除插件内保存的 Key，但当前环境仍配置了 LAIVOX_NOVEL_AUDIO_API_KEY。')))
+        } else {
+          setFailed(true)
+          setMessage(deferText(() => t('Key 未能清除，请稍后重试，或重新保存新 Key 覆盖。')))
+        }
+      } else {
+        setMessage(deferText(() => t('Key 已清除')))
+      }
     } catch (error) { setFailed(true); setMessage(deferText(() => explain(error))) }
     finally { setClearing(false) }
   }
@@ -400,6 +420,7 @@ function LaivoxCard({ keyInfo, reloadKey, decide, values, save, embedded = false
   const sampled = current?.at ? new Date(current.at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''
   const updatingKey = saving || clearing
   const measured = !denied && usage && !usage.unlimited && ['active', 'provisional'].includes(usage.state) && Number.isFinite(usage.remainingPct)
+  const breakdown = !denied && usage ? usageBreakdown(usage) : ''
   return <form className={embedded ? 'lv-laivox-settings lv-laivox-embedded' : 'lv-card lv-laivox-settings'} onSubmit={saveKey}>
     {!embedded && <h3 id="lv-laivox">{configured ? t('LaiVox 已连接') : t('连接 LaiVox（推荐 · 增值付费）')}</h3>}
     {configured && <div className="lv-laivox-account" role="status">
@@ -419,6 +440,7 @@ function LaivoxCard({ keyInfo, reloadKey, decide, values, save, embedded = false
         tone={current?.error ? 'muted' : usage.remainingPct <= 15 ? 'warn' : 'accent'}/>}
       {!usage && loading && <LevelBar label={t('正在刷新…')} progress busy/>}
       {current?.error && <small role="alert">{displayText(current.error)}</small>}
+      {breakdown && <small className="lv-quota-breakdown">{breakdown}</small>}
       {!denied && (poolExpiry || sampled) && <div className="lv-quota-meta">
         {poolExpiry && <small className="lv-metric-caption"><Icon name="Clock3" size={13}/><span>{t('{v1} 到期', { v1: poolExpiry })}</span></small>}
         {sampled && <small>{current?.error
@@ -433,6 +455,7 @@ function LaivoxCard({ keyInfo, reloadKey, decide, values, save, embedded = false
         {keyInfo?.keyPage && <a href={keyInfo.keyPage} target="_blank" rel="noopener noreferrer">{t("管理额度 ↗")}</a>}
         {packLink}
       </div>
+      {current?.packCatalog?.available && <small className="lv-quota-pack-price">{packPriceLine(current.packCatalog)}</small>}
     </section>}
     {configured && accountId && !updatingKey && <NarratorDefault key={accountId + ':' + (keyInfo?.masked ?? '')} account={accountId} values={values} save={save}/>}
     {configured ? <details>

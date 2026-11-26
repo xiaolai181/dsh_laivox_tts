@@ -50,6 +50,39 @@ export function usageLine(usage, { includePoolExpiry = true } = {}) {
   return parts.join(' · ')
 }
 
+function durationLabel(cs) {
+  if (!Number.isSafeInteger(cs) || cs < 0) return ''
+  if (cs === 0) return t('0 分钟')
+  const minutes = Math.floor(cs / 6000)
+  if (minutes < 1) return t('不足 1 分钟')
+  const hours = Math.floor(minutes / 60)
+  const rest = minutes % 60
+  if (hours > 0 && rest === 0) return t('{v1} 小时', { v1: hours })
+  if (hours > 0) return t('{v1} 小时 {v2} 分钟', { v1: hours, v2: rest })
+  return t('{v1} 分钟', { v1: minutes })
+}
+
+// Secondary breakdown line under the usage summary (used, total, in-flight, remaining).
+export function usageBreakdown(usage) {
+  if (!usage || usage.unlimited || usage.state === 'hold') return ''
+  if (usage.model === 'day' && usage.state === 'none') {
+    if (!Number.isInteger(usage.daysAvailable)) return ''
+    return Number.isSafeInteger(usage.nominalPerDay) && usage.nominalPerDay > 0
+      ? t('剩余 {v1} 个使用日 · 每日约 {v2}', { v1: usage.daysAvailable, v2: durationLabel(usage.nominalPerDay) })
+      : t('剩余 {v1} 个使用日', { v1: usage.daysAvailable })
+  }
+  if (!usage.amounts) return ''
+  const { granted, billed, reserved, remaining } = usage.amounts
+  const parts = [
+    usage.model === 'day'
+      ? t('本轮已用 {v1} / 共 {v2}', { v1: durationLabel(billed), v2: durationLabel(granted) })
+      : t('已用 {v1} / 共 {v2}', { v1: durationLabel(billed), v2: durationLabel(granted) }),
+  ]
+  if (reserved > 0) parts.push(t('处理中 {v1}', { v1: durationLabel(reserved) }))
+  parts.push(t('剩余 {v1}', { v1: durationLabel(remaining) }))
+  return parts.join(' · ')
+}
+
 // Why a usage day cannot be opened right now, or '' when it can.
 export function usageBlock(usage) {
   if (!usage || usage.canAuthorize) return ''

@@ -9,15 +9,23 @@ import { ProposalConfirm } from './ProposalConfirm.jsx'
 
 const SHOWN_JOBS = 3
 
-function JobRow({ job, open, resume, busy, now }) {
+function JobRow({ job, open, resume, cancel, busy, now }) {
+  const [confirmCancel, setConfirmCancel] = useState(false)
+  useEffect(() => { setConfirmCancel(false) }, [job.id, job.state])
   const line = jobLine(job, explain, now)
+  const canCancel = ['queued', 'running', 'paused'].includes(job.state)
   return <div className="lv-hdock-row">
     <div className="lv-hgrow">
       <span>{line.name}</span><span className={line.error ? 'lv-hmeta lv-herror' : 'lv-hmeta'}> · {[line.status, ...line.detail].join(' · ')}</span>
       {line.percent !== null && <div className="lv-hprogress" role="progressbar" aria-label={t("制作进度")} aria-valuenow={line.percent} aria-valuemin={0} aria-valuemax={100}><i style={{ width: line.percent + '%' }}/></div>}
     </div>
     <span className="lv-hactions">
-      {job.state === 'paused' && <button className="lv-hbtn" disabled={busy} onClick={() => resume(job.id)}>{t("继续制作")}</button>}
+      {job.state === 'paused' && !confirmCancel && <button className="lv-hbtn" disabled={busy} onClick={() => resume(job.id)}>{t("继续制作")}</button>}
+      {canCancel && !confirmCancel && <button className="lv-hbtn" disabled={busy} onClick={() => setConfirmCancel(true)}>{t("取消")}</button>}
+      {canCancel && confirmCancel && <>
+        <button className="lv-hbtn" disabled={busy} onClick={() => { setConfirmCancel(false); void cancel(job.id) }}>{t("确认取消")}</button>
+        <button className="lv-hbtn" disabled={busy} onClick={() => setConfirmCancel(false)}>{t("保留")}</button>
+      </>}
       <button className="lv-hbtn" onClick={() => open(job.chapter, job.purpose === 'generate' ? job.id : null)}>{t("打开")}</button>
     </span>
   </div>
@@ -75,6 +83,10 @@ export function NovelDock({ session, open, openWorkbench, manage, preview, liste
     await post('jobs/action', { id, action: 'resume' })
     feed.replace(session, await get('session', { id: session }))
   })
+  const cancelJob = id => settle(async () => {
+    await post('jobs/action', { id, action: 'cancel' })
+    feed.replace(session, await get('session', { id: session }))
+  })
   if (!snapshot || mode === 'never') return null
   const glyph = <span className="lv-hglyph"><Icon name="AudioLines" size={16}/></span>
   const close = keys => () => { dismissals?.set(session, keys); setClosed(value => value + 1) }
@@ -108,7 +120,7 @@ export function NovelDock({ session, open, openWorkbench, manage, preview, liste
       {view.imports.map(item => <div className="lv-hdock-row" key={item.id}>
         <span className="lv-hgrow">{item.title} <span className="lv-hmeta">{t("· 导入预览")}</span></span>
         <span className="lv-hactions"><button className="lv-hbtn" onClick={() => preview(item.id, session)}>{t("打开预览")}</button></span></div>)}
-      {view.jobs.slice(0, SHOWN_JOBS).map(job => <JobRow key={job.id} job={job} open={open} busy={busy} resume={resumeJob} now={now}/>)}
+      {view.jobs.slice(0, SHOWN_JOBS).map(job => <JobRow key={job.id} job={job} open={open} busy={busy} resume={resumeJob} cancel={cancelJob} now={now}/>)}
       {manage && view.jobs.some(job => job.isSnippet) && <div className="lv-hdock-row"><span className="lv-hgrow lv-hmeta">{t("朗读结果保存在对话片段里")}</span>
         <span className="lv-hactions"><button className="lv-hbtn" onClick={manage}>{t("在对话片段中管理")}</button></span></div>}
       {hidden > 0 && <div className="lv-hdock-row"><span className="lv-hgrow lv-hmeta">{t("还有") + " "}{hidden}{" " + t("章")}</span>

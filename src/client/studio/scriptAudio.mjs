@@ -32,3 +32,12 @@ export function rowQueued(part, operation, mode, engine) {
   if (operation.scope !== 'range') return true
   return (operation.ranges ?? []).some(range => part.start < range[1] && part.end > range[0])
 }
+
+export function rowRetakeState(part, operation, mode, engine) {
+  if (!operation?.retake) return null
+  if (!['queued', 'running', 'paused'].includes(operation.state)) return null
+  if ((operation.mode && mode && operation.mode !== mode) || (operation.engine && engine && operation.engine !== engine)) return null
+  const hits = operation.scope !== 'range' || (operation.ranges ?? []).some(range => part.start < range[1] && part.end > range[0])
+  if (!hits) return null
+  return operation.state === 'paused' ? 'paused' : 'active'
+}

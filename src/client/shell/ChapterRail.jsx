@@ -7,7 +7,7 @@ export function ChapterRail({ chapter, chapters, query, changeQuery, navigate, c
     {chapters.error && <p role="alert">{displayText(chapters.error)}<button onClick={chapters.reload}>{t('重试')}</button></p>}
     <div className="lv-rail-list">{chapters.value?.map(row => {
       const paused = row.jobState === 'paused'
-      const state = paused && row.jobAutoResume ? '自动重试中' : paused && row.jobPause ? '需处理' : row.jobError ? '失败' : ['running','queued'].includes(row.jobState) ? '合成中' : row.jobState==='paused' ? '已暂停' : row.hasAudio ? '可收听' : '无音频'
+      const state = paused && row.jobAutoResume ? '自动重试中' : paused && row.jobPause ? '需处理' : paused && row.jobError ? '失败' : ['running','queued'].includes(row.jobState) ? '合成中' : paused ? '已暂停' : row.hasAudio ? '可收听' : '无音频'
       return <button key={row.id} aria-current={row.id === chapter?.id ? 'true' : undefined} aria-label={row.title + ' ' + t(state)} onClick={() => navigate(row.id)}>
         <span className="lv-ordinal">{String(row.ordinal).padStart(2,'0')}</span><span>{row.title}</span><i className="lv-chapter-dot" title={t(state)} data-state={state}/></button>
     })}</div>

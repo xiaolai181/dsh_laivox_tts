@@ -49,6 +49,7 @@
 .lv-storage-metric { display: grid; gap: 7px; min-width: 0; }
 .lv-storage-metric[data-compact] { gap: 5px; }
 .lv-laivox-quota > .lv-level { margin: 3px 0 1px; min-height: 7px; }
+.lv-quota-breakdown { font-variant-numeric: tabular-nums; }
 .lv-quota-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 3px 12px; }
 .lv-quota-meta .lv-metric-caption { white-space: nowrap; }
 .lv-production-status > .lv-level { flex: 0 0 100%; }

@@ -8,7 +8,10 @@ import { GapNotice } from '../stage/GapNotice.jsx'
 import { PLAYBACK_RATES } from './shortcuts.mjs'
 export const clock = seconds => Math.floor(Math.max(0,seconds)/60)+':'+String(Math.floor(Math.max(0,seconds)%60)).padStart(2,'0')
 function newerLabel(newer) {
-  if (newer.scope === 'range') return t('正在重做第 {v1} 段', { v1: (newer.done ?? 0) + 1 })
+  if (newer.scope === 'range') {
+    if (newer.state === 'paused') return newer.retake ? t('重新合成已暂停') : t('局部合成已暂停')
+    return newer.retake ? t('正在重新合成选中段') : t('正在合成选中段')
+  }
   if (newer.state === 'paused') return t('新版已暂停 {done}/{total}', { done: newer.done, total: newer.total })
   return t('新版制作中 {done}/{total} · 听新版进度', { done: newer.done, total: newer.total })
 }

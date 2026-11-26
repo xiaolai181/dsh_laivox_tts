@@ -814,11 +814,30 @@ export function createJobQueue({ library, editorial, llm, gatewayFor, errorCode,
     return { ...spec, laivoxNarratorDefault: snapshot }
   }
 
+  async function resumeMatchedPaused(jobs, entries, priority) {
+    let woke = false
+    const out = [...jobs]
+    for (let index = 0; index < out.length; index++) {
+      const job = out[index]
+      if (!job || job.id === entries[index]?.id || job.state !== 'paused') continue
+      forgetAutoResume(job.id)
+      try {
+        out[index] = await library.transition(job.id, 'paused', 'queued', priority)
+        woke = true
+      } catch (error) {
+        if (error?.message !== 'JOB_STATE_CHANGED') throw error
+        out[index] = await library.job(job.id) ?? job
+      }
+    }
+    return { jobs: out, woke }
+  }
+
   async function enqueue(chapters, spec, session, priority, signal) {
     const frozen = freezeNarrator(spec, spec?.engine === 'laivox' ? await narratorSnapshot(signal) : null)
     const entries = chapters.map(chapter => ({ id: randomUUID(), chapter: chapter.id, rev: chapter.rev, session, spec: frozen }))
-    const jobs = await library.enqueue(entries, priority)
-    if (jobs.some((job, index) => job.id === entries[index].id)) await prefer(priority)
+    const inserted = await library.enqueue(entries, priority)
+    const { jobs, woke } = await resumeMatchedPaused(inserted, entries, priority)
+    if (woke || jobs.some((job, index) => job.id === entries[index].id)) await prefer(priority)
     return jobs
   }
 
@@ -917,7 +936,11 @@ export function createJobQueue({ library, editorial, llm, gatewayFor, errorCode,
     })
     signal?.throwIfAborted()
     const result = await library.enqueue(entries, priority, receipt)
-    if (!result.replay && result.jobs.some((job, index) => job.id === entries[index].id)) await prefer(priority)
+    if (!result.replay) {
+      const { jobs, woke } = await resumeMatchedPaused(result.jobs, entries, priority)
+      if (woke || jobs.some((job, index) => job.id === entries[index].id)) await prefer(priority)
+      return jobs
+    }
     return result.jobs
   }
 
@@ -983,7 +1006,7 @@ export function createJobQueue({ library, editorial, llm, gatewayFor, errorCode,
   async function markFillEdge(id) {
     const job = await library.job(id)
     if (!job) throw new Error('JOB_NOT_FOUND')
-    if (job.spec?.engine !== 'laivox' || job.spec?.purpose !== 'generate') throw new Error('INVALID_INPUT')
+    if (job.spec?.engine !== 'laivox' || job.spec?.purpose !== 'generate' || job.spec?.retake) throw new Error('INVALID_INPUT')
     if (job.state !== 'paused') throw new Error('JOB_STATE_CHANGED')
     if (!job.progress?.fill) await library.markFill(id, { time: Date.now() })
   }

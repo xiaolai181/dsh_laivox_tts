@@ -80,11 +80,12 @@ export function createLaivoxSession({ credentials, now = Date.now }) {
   }
 
   async function readKeyStatus() {
-    const { configured, masked } = await credentials.describe(keyRef)
-    if (!configured) return { configured, masked, account: null }
+    const { configured, masked, source } = await credentials.describe(keyRef)
+    const keySource = typeof source === 'string' ? source : null
+    if (!configured) return { configured, masked, source: keySource, account: null }
     const credential = await credentials.resolve(keyRef)
     const digest = credential ? digestOf(credential.value) : null
-    return { configured, masked, account: digest && cached?.digest === digest ? cached.account : null }
+    return { configured, masked, source: keySource, account: digest && cached?.digest === digest ? cached.account : null }
   }
 
   const keyStatus = () => inKeyOrder(readKeyStatus)
@@ -107,9 +108,14 @@ export function createLaivoxSession({ credentials, now = Date.now }) {
   }
 
   async function clearKey() {
-    if (typeof credentials.delete !== 'function') throw new Error('KEY_CLEAR_UNSUPPORTED')
+    const remove = typeof credentials.unset === 'function'
+      ? () => credentials.unset(keyRef)
+      : typeof credentials.delete === 'function'
+        ? () => credentials.delete(keyRef)
+        : null
+    if (!remove) throw new Error('KEY_CLEAR_UNSUPPORTED')
     return inKeyOrder(async () => {
-      await credentials.delete(keyRef)
+      await remove()
       keyGeneration++
       inflight = null
       forget()

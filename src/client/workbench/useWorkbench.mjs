@@ -7,6 +7,8 @@ import { decideListen } from '../player/listenPlan.mjs'
 import { KEEP_PREVIOUS_AUDIO } from '../../domain/production.mjs'
 import { estimateAiCalls } from '../../domain/ai.mjs'
 import { createSettingsQueue } from './settingsQueue.mjs'
+import { openUsageDay } from './laivox.mjs'
+import { diffNewPausedJobs, pauseNoticeFor, pauseNoticeKey, scanPausedJobs } from './pauseNotice.mjs'
 
 const pageSize = 80
 const activeJob = job => ['queued', 'running', 'paused'].includes(job?.state)
@@ -21,8 +23,8 @@ const signatureOf = view => [
   // batches (and the production mosaic) would not repaint until synthesis.
   view?.operation?.stage, view?.operation?.counts?.clean?.done, view?.operation?.counts?.cast?.done,
   view?.operation?.synthesis?.done, view?.operation?.ai?.requests, view?.operation?.error,
-  view?.operation?.pauseReason, view?.operation?.autoResume?.at, view?.operation?.live?.removed?.length,
-  view?.operation?.scope, Array.isArray(view?.operation?.ranges) ? view.operation.ranges.map(range => range.join(':')).join(',') : '',
+  view?.operation?.pauseReason, view?.operation?.laivoxPause?.kind, view?.operation?.laivoxPause?.until, view?.operation?.autoResume?.at, view?.operation?.live?.removed?.length,
+  view?.operation?.scope, view?.operation?.retake ? 1 : 0, Array.isArray(view?.operation?.ranges) ? view.operation.ranges.map(range => range.join(':')).join(',') : '',
   Array.isArray(view?.media) ? view.media.length : 0,
   Array.isArray(view?.media) ? view.media.reduce((count, part) => count + (part.ready ? 1 : 0), 0) : 0,
   view?.playbackJob?.id,
@@ -45,6 +47,8 @@ export function useWorkbench(player, navigation, memory) {
   const [options, setOptions] = useState(() => memory.options ?? modeOptions(memory.settings.values))
   const [models, setModels] = useState(null)
   const [keyInfo, setKeyInfo] = useState(null)
+  const [keySavedAt, setKeySavedAt] = useState(0)
+  const [resumedAfterKey, setResumedAfterKey] = useState(() => new Set())
   const keyRead = useRef(0)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
@@ -76,6 +80,13 @@ export function useWorkbench(player, navigation, memory) {
   const navRead = useRef(null)
   const noticeTimer = useRef(null)
   const exportRef = useRef({ timer: null })
+  const keyInfoRef = useRef(keyInfo)
+  keyInfoRef.current = keyInfo
+  const pausedBaselineRef = useRef(null)
+  const seenPausedRef = useRef(new Set())
+  const pendingPausedEdgeRef = useRef(null)
+  const pendingBaselineShrinkRef = useRef(false)
+  const pendingToastRef = useRef(null)
   const errors = error => {
     if (!life.current) return
     setError(error)
@@ -90,10 +101,48 @@ export function useWorkbench(player, navigation, memory) {
     if (!life.current) return
     if (noticeTimer.current) clearTimeout(noticeTimer.current)
     setNotice(message)
+    const duration = Number.isFinite(message?.durationMs) && message.durationMs > 0 ? message.durationMs : 6000
     noticeTimer.current = setTimeout(() => {
       noticeTimer.current = null
       if (life.current) setNotice('')
-    }, 6000)
+    }, duration)
+  }
+  function rememberExistingPaused(job) {
+    if (!job?.id) return
+    pausedBaselineRef.current?.add(job.id)
+    const key = pauseNoticeKey(job)
+    if (key) seenPausedRef.current.add(key)
+  }
+  function forgetPausedJob(id) {
+    if (!id) return
+    pausedBaselineRef.current?.delete(id)
+    const prefix = id + ':'
+    for (const key of seenPausedRef.current) {
+      if (key.startsWith(prefix)) seenPausedRef.current.delete(key)
+    }
+  }
+  async function openUsageDayAction() {
+    try {
+      const result = await openUsageDay(decide)
+      if (result.opened) {
+        flashNotice(deferText(() => t('已开启下一个使用日，点「继续制作」接着制作')))
+        await refresh().catch(() => {})
+      } else if (result.message) flashNotice(result.message)
+    } catch (error) { errors(error) }
+  }
+  function presentPauseNotice(job) {
+    if (!life.current || !pauseNoticeKey(job)) return
+    const item = pauseNoticeFor(job, {
+      explain,
+      packPage: keyInfoRef.current?.packPage,
+      currentChapterId: active.current?.view?.id,
+      openDay: () => void openUsageDayAction(),
+      openSettings: () => setPanel('production'),
+      openRoles: () => setPanel('roles'),
+      openQueue: () => { setQueueScope(null); setPage('queue') },
+    })
+    if (typeof document !== 'undefined' && document.hidden) pendingToastRef.current = item
+    else flashNotice(item)
   }
   const chapterKey = chapter?.id ?? 'new'
   const book = chapter?.book ?? null
@@ -221,6 +270,7 @@ export function useWorkbench(player, navigation, memory) {
     active.current = { view: value, pin, signature: signatureOf(value) }
     memory.activeId = value.id
     try { localStorage.setItem(lastChapterKey, value.id) } catch {}
+    if (value?.operation?.state === 'paused') rememberExistingPaused(value.operation)
     setChapter(value); setPage('reader'); setPanel(null)
     setError(''); setBlocked(null); clearNotice()
     player.update(value, adopt)
@@ -258,6 +308,12 @@ export function useWorkbench(player, navigation, memory) {
       if (!quiet) {
         setChapter(value)
         player.update(value, adopting || !player.getSnapshot().job)
+      }
+      const pKey = pauseNoticeKey(value?.operation)
+      if (pKey && !seenPausedRef.current.has(pKey)) {
+        seenPausedRef.current.add(pKey)
+        pausedBaselineRef.current?.add(value.operation.id)
+        presentPauseNotice(value.operation)
       }
       return value
     } finally { if (target.adopting === order) target.adopting = null }
@@ -609,7 +665,13 @@ export function useWorkbench(player, navigation, memory) {
   async function reloadKey(updated) {
     const order = ++keyRead.current
     const value = typeof updated?.configured === 'boolean' ? updated : await get('key')
-    if (life.current && order === keyRead.current) setKeyInfo(previous => ({ ...previous, ...value }))
+    if (life.current && order === keyRead.current) {
+      setKeyInfo(previous => ({ ...previous, ...value }))
+      if (updated?.configured === true) {
+        setKeySavedAt(Date.now())
+        setResumedAfterKey(new Set())
+      }
+    }
   }
   // Settings take effect as soon as a control changes; see settingsQueue.mjs
   // for how concurrent saves are merged and conflicts handled.
@@ -655,10 +717,92 @@ export function useWorkbench(player, navigation, memory) {
         const previous = countsRef.current
         countsRef.current = counts
         if (previous && ['completed', 'cancelled', 'paused'].some(key => (counts[key] ?? 0) !== (previous[key] ?? 0))) changeShelf(n => n + 1)
+        if (previous && (counts.paused ?? 0) > (previous.paused ?? 0)) pendingPausedEdgeRef.current = { retries: 0 }
+        else if (previous && (counts.paused ?? 0) < (previous.paused ?? 0) && (counts.paused ?? 0) > 0 && pausedBaselineRef.current !== null) {
+          pendingBaselineShrinkRef.current = true
+        }
+        if ((counts.paused ?? 0) === 0 && pausedBaselineRef.current !== null) {
+          pausedBaselineRef.current = new Set()
+          seenPausedRef.current.clear()
+          pendingPausedEdgeRef.current = null
+          pendingBaselineShrinkRef.current = false
+        }
         setJobCounts(counts)
         // A hidden tab still refreshes the counters but skips the chapter read
         // (and the re-render it would trigger).
         if (!hiddenNow()) await refresh(abort.signal)
+        if (!abort.signal.aborted && life.current) {
+          if (pausedBaselineRef.current === null) {
+            if ((counts.paused ?? 0) === 0) {
+              pausedBaselineRef.current = new Set()
+              pendingPausedEdgeRef.current = null
+              pendingBaselineShrinkRef.current = false
+            } else {
+              try {
+                const scanned = await scanPausedJobs(offset => get('jobs/page', { state: 'paused', offset }, abort.signal))
+                if (!abort.signal.aborted && life.current) {
+                  const baseline = new Set()
+                  for (const job of scanned.jobs) rememberExistingPaused(job)
+                  for (const job of scanned.jobs) if (job?.id) baseline.add(job.id)
+                  pausedBaselineRef.current = baseline
+                  pendingPausedEdgeRef.current = null
+                  pendingBaselineShrinkRef.current = false
+                }
+              } catch { /* Silent: baseline will retry on next poll without alarming the user. */ }
+            }
+          } else if (pendingPausedEdgeRef.current !== null) {
+            try {
+              const scanned = await scanPausedJobs(offset => get('jobs/page', { state: 'paused', offset }, abort.signal))
+              if (!abort.signal.aborted && life.current) {
+                const newJobs = diffNewPausedJobs(pausedBaselineRef.current, scanned.jobs)
+                if (scanned.complete) {
+                  const merged = new Set(scanned.jobs.map(job => job.id).filter(Boolean))
+                  const currentOp = active.current?.view?.operation
+                  if (currentOp?.state === 'paused' && currentOp.id) merged.add(currentOp.id)
+                  for (const oldId of pausedBaselineRef.current) {
+                    if (!merged.has(oldId)) forgetPausedJob(oldId)
+                  }
+                  pausedBaselineRef.current = merged
+                  pendingBaselineShrinkRef.current = false
+                } else {
+                  for (const job of scanned.jobs) if (job?.id) pausedBaselineRef.current.add(job.id)
+                }
+                const actionable = []
+                for (const job of newJobs) {
+                  const pKey = pauseNoticeKey(job)
+                  if (pKey && !seenPausedRef.current.has(pKey)) {
+                    seenPausedRef.current.add(pKey)
+                    actionable.push(job)
+                  }
+                }
+                if (actionable.length > 0) {
+                  presentPauseNotice(actionable[0])
+                  pendingPausedEdgeRef.current = null
+                } else if (newJobs.length > 0) {
+                  pendingPausedEdgeRef.current = null
+                } else if ((!scanned.complete || (counts.paused ?? 0) > pausedBaselineRef.current.size) && pendingPausedEdgeRef.current.retries < 2) {
+                  pendingPausedEdgeRef.current = { retries: pendingPausedEdgeRef.current.retries + 1 }
+                } else {
+                  pendingPausedEdgeRef.current = null
+                }
+              }
+            } catch { /* Silent: preserve pendingPausedEdgeRef for next poll. */ }
+          } else if (pendingBaselineShrinkRef.current) {
+            try {
+              const scanned = await scanPausedJobs(offset => get('jobs/page', { state: 'paused', offset }, abort.signal))
+              if (!abort.signal.aborted && life.current && scanned.complete) {
+                const stillPaused = new Set(scanned.jobs.map(job => job.id).filter(Boolean))
+                const currentOp = active.current?.view?.operation
+                if (currentOp?.state === 'paused' && currentOp.id) stillPaused.add(currentOp.id)
+                for (const oldId of pausedBaselineRef.current) {
+                  if (!stillPaused.has(oldId)) forgetPausedJob(oldId)
+                }
+                pausedBaselineRef.current = stillPaused
+                pendingBaselineShrinkRef.current = false
+              }
+            } catch { /* Silent: retry shrinking baseline on next poll. */ }
+          }
+        }
       } catch (error) {
         if (!abort.signal.aborted && life.current) flashNotice(deferText(() => t('进度暂时无法更新，正在重试。')))
       } finally {
@@ -674,6 +818,11 @@ export function useWorkbench(player, navigation, memory) {
     }
     const wake = () => {
       if (hiddenNow() || !life.current) return
+      if (pendingToastRef.current) {
+        const queued = pendingToastRef.current
+        pendingToastRef.current = null
+        flashNotice(queued)
+      }
       clearTimeout(timer)
       if (inFlight) { again = true; return }
       void poll()
@@ -868,6 +1017,9 @@ export function useWorkbench(player, navigation, memory) {
       }
       try {
         const { result, snapshot } = await operation(key, 'jobs/action', input)
+        if (Array.isArray(result)) {
+          for (const item of result) forgetPausedJob(typeof item === 'string' ? item : item?.id)
+        }
         const first = result[0]
         if (batch) {
           setSelection(items => new Map([...items].filter(([id]) => !snapshot.ids.includes(id))))
@@ -898,7 +1050,18 @@ export function useWorkbench(player, navigation, memory) {
     if (action === 'cancel' && !await decide({ title: deferText(() => t('取消这个任务？')), text: deferText(() => t('任务将结束。已经生成的音频仍可播放。')),
       choices: [['cancel', deferText(() => t('取消任务'))], [null, deferText(() => t('保留任务'))]], destructive: true })) return
     jobRef.current.set(id, action); setActions(new Map(jobRef.current))
-    try { await post('jobs/action', { id, action }) }
+    try {
+      await post('jobs/action', { id, action })
+      if (action === 'resume' || action === 'cancel' || action === 'fill-edge') forgetPausedJob(id)
+      if (action === 'resume') {
+        setResumedAfterKey(current => {
+          if (current.has(id)) return current
+          const next = new Set(current)
+          next.add(id)
+          return next
+        })
+      }
+    }
     catch (error) {
       const latest = await get('jobs/item', { id }).catch(() => null)
       const accepted = { pause: ['paused','completed'], resume: ['queued','running','completed'], cancel: ['cancelled','completed'], 'fill-edge': ['queued','running','completed'] }
@@ -1159,9 +1322,9 @@ export function useWorkbench(player, navigation, memory) {
     chapter, book, appendBook, creating: Boolean(creation) || !chapter, creationSaved: Boolean(creation?.savedChapter),
     creationPending: memory.operations.has('save:new'), newDraft, editNewDraft,
     draft, scriptDraft, roleDraft, dirty, busy, booting, page, setPage, panel, setPanel,
-    options, reviseOptions, models, reloadModels, keyInfo, reloadKey, settings: memory.settings, saveSetting, chooseOptions,
+    options, reviseOptions, models, reloadModels, keyInfo, keySavedAt, resumedAfterKey, reloadKey, settings: memory.settings, saveSetting, chooseOptions,
     error: typeof error === 'string' || isDeferredText(error) ? displayText(error) : explain(error), errorCode: error?.message,
-    notice, setNotice, flashNotice, errors, clearError: () => { setError(''); setBlocked(null) }, blocked, decide, dialog, answer, memory, selection, setSelection, shelfVersion,
+    notice, setNotice, clearNotice, flashNotice, openUsageDayAction, errors, clearError: () => { setError(''); setBlocked(null) }, blocked, decide, dialog, answer, memory, selection, setSelection, shelfVersion,
     selectRows, invertRows, clearSelection, selectBook,
     importEntry, showImport, jobCounts, actions, jobAction, queueScope, setQueueScope,
     navigate, cancelCreation, refresh, listenOlder, reloadChapter, save, generate, listenFrom, clearListen, editDraft, editScript, editRole, saveRoleVoice, upgradeVoiceRule, discardRoles, chooseRoleConflict, clearAudio,

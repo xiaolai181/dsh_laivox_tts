@@ -10,13 +10,14 @@ import { roleColor } from '../stage/roleColor.mjs'
 import { groupSpeech, segmentChapter, segmentVersion } from '../../domain/segment.mjs'
 import { explain, get, post, url } from '../api.mjs'
 import { chapterRoles } from '../workbench/state.mjs'
-import { rowAudio, rowChanged, rowQueued } from './scriptAudio.mjs'
+import { rowAudio, rowChanged, rowQueued, rowRetakeState } from './scriptAudio.mjs'
 import { productionView } from '../workbench/productionView.mjs'
 import { previewChannel } from '../player/previewChannel.mjs'
 import { rovingIndex } from './roving.mjs'
+import { pauseActionSpec } from '../workbench/pauseNotice.mjs'
 
 const labels = { neutral: '平静', happy: '喜悦', sad: '悲伤', angry: '愤怒', afraid: '害怕', tense: '紧张', gentle: '温柔' }
-export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, notify, busy, player, newRole, options, generate }) {
+export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, notify, busy, player, newRole, options, generate, jobAction, actions, openSettings, openRoles, openDay, packPage }) {
   const listRef = useRef(null)
   const [roleFilter, setRoleFilter] = useState('')
   const [search, setSearch] = useState('')
@@ -53,7 +54,7 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
       if (!abort.signal.aborted) setPlan(value)
     }).catch(() => { if (!abort.signal.aborted) setPlan(null) })
     return () => abort.abort()
-  }, [chapter?.id, chapter?.rev, chapter?.rolesRev, chapter?.editorialResultJob, chapter?.operation?.synthesis?.done, chapter?.operation?.scope, engine, mode, planTry])
+  }, [chapter?.id, chapter?.rev, chapter?.rolesRev, chapter?.editorialResultJob, chapter?.operation?.id, chapter?.operation?.state, chapter?.operation?.synthesis?.done, chapter?.operation?.scope, engine, mode, planTry])
   useEffect(() => () => {
     const channel = previewChannel()
     if (String(channel?.currentKey() ?? '').startsWith('line:')) channel.stop()
@@ -83,15 +84,35 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
     const operation = chapter.operation
     const active = operation && ['queued', 'running', 'paused'].includes(operation.state)
     const modeName = operation?.mode === 'multi' ? '多角色演绎' : '单人朗读'
+    const startPart = async () => {
+      const result = await generate?.('generate', false, '', { only: { start: part.start, end: part.end }, focusStart: part.start })
+      if (result?.reason === 'busy') notify(deferText(() => t('正在处理上一个操作')))
+      else if (result?.reason === 'pending') notify(deferText(() => t('上一次制作还在确认，请稍候')))
+    }
     if (active && operation.engine && operation.engine !== engine) { notify(deferText(() => t('当前任务用的是另一套引擎，先等它结束或停止'))); return }
     if (active && operation.mode && operation.mode !== mode) { notify(deferText(() => t("当前任务是{v1}，先等它结束或停止", { v1: t(modeName) }))); return }
-    if (active && operation.state === 'paused' && operation.scope !== 'range') {
+    if (active && operation.retake) { notify(deferText(() => t('本章正在重新合成指定段落，先等它结束或取消'))); return }
+    if (active && operation.state === 'paused') {
       if (operation.laivoxPause && ['quota', 'account', 'membership', 'outdated', 'voice'].includes(operation.laivoxPause.kind)) {
         notify(deferText(() => t('这一段要等额度或账号的问题解决后才能继续')))
         return
       }
+      if (operation.scope === 'range') {
+        const result = await post('jobs/action', { action: 'include', id: operation.id, start: part.start, end: part.end })
+        if (result?.included) {
+          await post('jobs/action', { id: operation.id, action: 'resume', start: part.start })
+          notify(deferText(() => t('已继续制作，并先做这一段')))
+          return
+        }
+        await startPart()
+        return
+      }
       await post('jobs/action', { id: operation.id, action: 'resume', start: part.start })
       notify(deferText(() => t('已继续制作，并先做这一段')))
+      return
+    }
+    if (active && operation.state === 'queued' && operation.scope !== 'range') {
+      notify(deferText(() => t('本章任务已在排队中，稍候会自动开始')))
       return
     }
     const index = plan?.parts?.findIndex(row => row[0] < part.end && row[1] > part.start) ?? -1
@@ -102,10 +123,11 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
     }
     if (active && operation.scope === 'range') {
       const result = await post('jobs/action', { action: 'include', id: operation.id, start: part.start, end: part.end })
-      if (result?.included && operation.state === 'paused') await post('jobs/action', { id: operation.id, action: 'resume' })
-      if (result?.included) return
+      if (result?.included) { notify(deferText(() => t('已加入当前制作任务'))); return }
+      await startPart()
+      return
     }
-    if (!active) await generate?.('generate', false, '', { only: { start: part.start, end: part.end }, focusStart: part.start })
+    if (!active) await startPart()
   }
   // Listening is the judge: a part that already has audio can be made again.
   // LaiVox gives a different take each time; the old audio stays until the new
@@ -113,22 +135,28 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
   async function retake(part) {
     try {
       const result = await generate?.('generate', false, '', { only: { start: part.start, end: part.end }, focusStart: part.start, retake: true, clean: false, keepDrafts: true })
-      if (result?.ok !== false) notify(deferText(() => t('正在重新合成这一段，完成后替换原来的音频')))
+      if (result?.ok) notify(deferText(() => t('正在重新合成这一段，完成后替换原来的音频')))
+      else if (result?.reason === 'busy') notify(deferText(() => t('正在处理上一个操作')))
+      else if (result?.reason === 'pending') notify(deferText(() => t('上一次制作还在确认，请稍候')))
     } catch (error) { notify(deferText(() => explain(error))) }
   }
-  const retaking = part => Boolean(chapter.operation?.retake && rowQueued(part, { ...chapter.operation, state: 'running' }, mode, engine))
+  const retakeStateOf = part => rowRetakeState(part, chapter.operation, mode, engine)
   const removedDirty = Boolean(draft) && [...new Set([...(chapter.editorial?.removed ?? []), ...(state.removed ?? [])])].some(id => new Set(chapter.editorial?.removed ?? []).has(id) !== new Set(state.removed ?? []).has(id))
   const retakeBlock = chapter.operation && ['queued', 'running'].includes(chapter.operation.state) ? t('本章制作结束后可以重新合成')
+    : chapter.operation?.state === 'paused' ? t('本章有已暂停的任务，先继续或取消后再重新合成')
     : removedDirty ? t('已移除的行有未保存修改，先保存或放弃') : ''
   function lineFacts(part) {
     const changed = Boolean(draft) && rowChanged(part, state.annotations, chapter.editorial?.annotations)
     const audio = rowAudio(part, plan)
-    const queued = !changed && audio.audio !== 'ready' && rowQueued(part, chapter.operation, mode, engine)
+    const retakeState = changed ? null : retakeStateOf(part)
+    const queued = !changed && !retakeState && audio.audio !== 'ready' && rowQueued(part, chapter.operation, mode, engine)
     const text = changed ? (mode === 'reading' ? t('已修改 · 单人朗读不使用') : t('已修改 · 保存后重新合成这一行'))
-      : retaking(part) ? t('重新合成中') : queued ? t('排队中')
+      : retakeState === 'active' ? t('重新合成中')
+      : retakeState === 'paused' ? (chapter.operation?.error ? t('重新合成失败') : t('重新合成已暂停'))
+      : queued ? t('排队中')
       : plan?.status === 'ok' ? (audio.audio === 'ready' ? t('已合成') : audio.audio === 'partial' ? t('部分已合成') : t('未合成')) : ''
     const edge = !changed && audio.hits.some(row => row[4] === 'edge') ? t(' · Edge 补完') : ''
-    return { changed, audio, status: text + edge }
+    return { changed, audio, retakeState, status: text + edge }
   }
   const filtered = groups.filter(part => (!roleFilter || part.roleId === roleFilter) && (!dialogueOnly || part.roleId !== 'narrator') && part.text.includes(search.trim()))
   useEffect(() => { setPage(0) },[roleFilter, search, dialogueOnly])
@@ -202,12 +230,17 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
       const facts = lineFacts(part)
       const ready = plan?.status === 'ok' && !facts.changed && facts.audio.audio === 'ready'
       const speaker = roleDisplayName(roleIds.get(roleId)) ?? (roleId === 'narrator' ? t('旁白') : t('待改派'))
+      const op = chapter.operation
+      const opPending = op ? actions?.get(op.id) : null
+      const retakeError = facts.retakeState === 'paused' && op?.error ? explain(op.retryAfter ? { message: op.error, retryAfter: op.retryAfter } : op.error) : ''
+      const pauseSpec = facts.retakeState === 'paused' ? pauseActionSpec(op?.laivoxPause, packPage) : null
       return <article key={part.id} tabIndex={selecting ? undefined : (index === focusIndex ? 0 : -1)} style={{'--lv-role-color':roleColor(part.roleId)}} data-dialogue={part.roleId !== 'narrator'} onFocus={() => setRowFocus(index)}>
         {selecting && <input className="lv-script-check" type="checkbox" aria-label={t("选择第 {v1} 段", { v1: number })} checked={selection.has(part.id)} onChange={e=>setSelection(current=>{const next=new Set(current);if(e.target.checked) next.add(part.id);else next.delete(part.id);return next})}/>}
         <div className="lv-script-who"><span>{number} · {speaker}</span><small>{part.intensity===2?t('强烈 · '):''}{t(labels[emotion])}</small></div>
         <div className="lv-script-main">
           <p>{part.text}</p>
           <button className="lv-direction" onClick={()=>setEditing(part.id)}>{part.instruct ? '— '+part.instruct : t('旧版语气')}</button>
+          {retakeError && <small className="lv-script-error" role="alert">{retakeError}</small>}
           {editing === part.id && <>
             {controls(part, t("第 {v1} 段", { v1: number }))}
             {part.sourceIds.length > 1 && <details className="lv-script-detail"><summary>{t("分别调整片段")}</summary>
@@ -219,12 +252,23 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
           </>}
         </div>
         <div className="lv-script-actions">
-          {facts.status && <small className="lv-script-status">{facts.status}</small>}
+          {facts.status && <small className="lv-script-status" data-error={Boolean(retakeError) || undefined}>{facts.status}</small>}
           <button className="lv-subtle" aria-expanded={editing === part.id} aria-label={t("调整第 {v1} 段", { v1: number })} onClick={() => setEditing(editing === part.id ? null : part.id)}>{editing === part.id ? t('收起') : t('调整')}</button>
-          {plan?.status === 'ok' && facts.audio.audio !== 'ready' && <button disabled={Boolean(chapter.operation?.laivoxPause && ['quota', 'account', 'membership', 'outdated', 'voice'].includes(chapter.operation.laivoxPause.kind) && chapter.operation.state === 'paused' && chapter.operation.scope !== 'range')} onClick={() => synthesize(part)}>{chapter.operation?.state === 'running' && chapter.operation?.scope !== 'range' && chapter.operation?.mode === mode ? t('先合成这段') : t('合成这段')}</button>}
+          {plan?.status === 'ok' && facts.audio.audio !== 'ready' && <button disabled={Boolean((chapter.operation?.laivoxPause && ['quota', 'account', 'membership', 'outdated', 'voice'].includes(chapter.operation.laivoxPause.kind) && chapter.operation.state === 'paused') || (chapter.operation?.retake && ['queued', 'running', 'paused'].includes(chapter.operation.state)))} onClick={() => synthesize(part)}>{chapter.operation?.state === 'running' && chapter.operation?.scope !== 'range' && chapter.operation?.mode === mode ? t('先合成这段') : t('合成这段')}</button>}
+          {facts.retakeState === 'active' && jobAction && <span className="lv-script-retake-actions">
+            <button type="button" className="lv-subtle" disabled={Boolean(opPending)} aria-label={t('取消重新合成第 {v1} 段', { v1: number })} onClick={() => void jobAction(op.id, 'cancel')}>{opPending === 'cancel' ? t('正在取消') : t('取消')}</button>
+          </span>}
+          {facts.retakeState === 'paused' && jobAction && <span className="lv-script-retake-actions">
+            {pauseSpec?.type === 'settings' && openSettings && <button type="button" className="lv-primary" onClick={openSettings}>{t(pauseSpec.label)}</button>}
+            {pauseSpec?.type === 'openDay' && openDay && <button type="button" className="lv-primary" onClick={openDay}>{t(pauseSpec.label)}</button>}
+            {pauseSpec?.type === 'roles' && openRoles && <button type="button" className="lv-primary" onClick={openRoles}>{t(pauseSpec.label)}</button>}
+            {pauseSpec?.type === 'link' && <a className="lv-link" href={pauseSpec.href} target="_blank" rel="noopener noreferrer">{t(pauseSpec.label)}</a>}
+            <button type="button" className="lv-subtle" disabled={Boolean(opPending)} aria-label={t('重试重新合成第 {v1} 段', { v1: number })} onClick={() => void jobAction(op.id, 'resume')}>{opPending === 'resume' ? t('正在继续') : t('重试')}</button>
+            <button type="button" className="lv-subtle" disabled={Boolean(opPending)} aria-label={t('取消重新合成第 {v1} 段', { v1: number })} onClick={() => void jobAction(op.id, 'cancel')}>{opPending === 'cancel' ? t('正在取消') : t('取消')}</button>
+          </span>}
           <span className="lv-script-extra">
             {ready && <button className="lv-script-preview" aria-label={t("试听第 {v1} 段", { v1: number })} onClick={() => previewRow(part)}><Icon name="Play"/></button>}
-            {ready && engine === 'laivox' && !retaking(part) && <button className="lv-subtle" disabled={busy || Boolean(retakeBlock)}
+            {ready && engine === 'laivox' && !facts.retakeState && <button className="lv-subtle" disabled={busy || Boolean(retakeBlock)}
               title={retakeBlock || t('再合成一次这一段，听感会不同；计入 LaiVox 用量')}
               aria-label={t("重新合成第 {v1} 段", { v1: number })} onClick={() => retake(part)}>{t("重新合成")}</button>}
           </span>

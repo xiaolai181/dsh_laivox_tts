@@ -1,11 +1,13 @@
 import { getLanguage, translate as t } from '../i18n/locale.mjs'
 import React, { memo, useCallback, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { explain } from '../api.mjs'
 import { Icon } from '../components/Icon.jsx'
 import { ActivityMark, LevelBar } from '../components/Metrics.jsx'
 import { AiUsage } from '../jobs/AiUsage.jsx'
 import { roleColor } from './roleColor.mjs'
 import { buildMosaic } from './liveMosaic.mjs'
 import { emotions } from './ImmersiveLines.jsx'
+import { pauseActionSpec } from '../workbench/pauseNotice.mjs'
 
 const STATE_NAMES = { removed: '已清洗移除', pending: '待处理', cast: '已编剧', ready: '已合成' }
 
@@ -33,7 +35,7 @@ function Step({ index, title, count, unit, active, done, stage, state }) {
 // The production as it happens: cleaning, scripting and synthesis on one
 // sheet. Clicking a synthesized block plays from there; clicking one that is
 // not ready yet asks the job to synthesize it next.
-export function ProductionLive({ chapter, operation, player, listenFrom, collapsible = false }) {
+export function ProductionLive({ chapter, operation, player, listenFrom, collapsible = false, packPage, onOpenDay, onOpenSettings, onOpenRoles }) {
   const live = operation?.live
   const s = useSyncExternalStore(player.subscribe, player.getSnapshot)
   const [open, setOpen] = useState(!collapsible)
@@ -62,11 +64,19 @@ export function ProductionLive({ chapter, operation, player, listenFrom, collaps
     listenFrom?.(block.start)
   }
   picker.current = pick
+  const alertAction = operation.state === 'paused' && operation.error ? pauseActionSpec(operation.laivoxPause, packPage) : null
   return <section className="lv-live" aria-label={t("制作现场")} data-paused={operation.state === 'paused' || undefined}>
     <header className="lv-live-head">
       <ol className="lv-live-steps">{steps.map((step, index) => <Step key={step.key} index={index + 1} stage={stage} state={operation.state} {...step}/>)}</ol>
       {collapsible && <button type="button" className="lv-live-toggle" aria-expanded={open} onClick={() => setOpen(value => !value)}>{open ? t('收起') : t('展开制作现场')}</button>}
     </header>
+    {operation.state === 'paused' && operation.error && <div className="lv-live-alert" role="alert">
+      <span>{explain(operation.retryAfter ? { message: operation.error, retryAfter: operation.retryAfter } : operation.error)}</span>
+      {alertAction?.type === 'openDay' && onOpenDay && <button type="button" className="lv-primary" onClick={onOpenDay}>{t(alertAction.label)}</button>}
+      {alertAction?.type === 'settings' && onOpenSettings && <button type="button" className="lv-primary" onClick={onOpenSettings}>{t(alertAction.label)}</button>}
+      {alertAction?.type === 'roles' && onOpenRoles && <button type="button" className="lv-primary" onClick={onOpenRoles}>{t(alertAction.label)}</button>}
+      {alertAction?.type === 'link' && <a className="lv-primary" href={alertAction.href} target="_blank" rel="noopener noreferrer">{t(alertAction.label)}</a>}
+    </div>}
     {open && activeStep && <LevelBar label={stage === 'synthesizing' ? t('合成进度') : t('AI 处理进度')}
       progress busy={operation.state === 'running'} value={activeStep.count?.done} max={activeStep.count?.total ?? 0}
       tone={operation.state === 'paused' ? 'muted' : 'accent'}/>}
@@ -76,7 +86,7 @@ export function ProductionLive({ chapter, operation, player, listenFrom, collaps
       {mosaic.roles.length > 0 && <div className="lv-live-roster" aria-label={t("出场角色")}>{mosaic.roles.map(id =>
         <span key={id} className="lv-live-role" style={{ '--lv-role-color': roleColor(id) }}><i className="lv-role-dot"/>{roleName(id)}</span>)}</div>}
       {live.notes?.length > 0 && <p className="lv-live-notes"><small>{t("本批语气提示")}</small>{live.notes.map(note => <span key={note}>「{note}」</span>)}</p>}
-      <small className="lv-live-help">{operation.state === 'paused' ? t('已暂停，进度停在这里。') : t('点已合成的块从那里听；点还没合成的块，优先合成那里。')}</small>
+      <small className="lv-live-help">{operation.state === 'paused' ? (operation.error ? '' : t('已暂停，进度停在这里。')) : t('点已合成的块从那里听；点还没合成的块，优先合成那里。')}</small>
     </>}
     {open && !mosaic?.blocks.length && <small className="lv-live-help">{t("正在准备制作数据…")}</small>}
   </section>

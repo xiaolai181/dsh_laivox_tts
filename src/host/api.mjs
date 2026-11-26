@@ -98,9 +98,11 @@ export async function chapterAudioPlan(library, id, engine, mode, gatewayFor) {
       : [part.start, part.end, ready.has(part.key) ? 1 : 0, part.key])
   }
   if (active?.progress.parts?.length) return { status: 'ok', rev: chapter.rev, parts: await mark(active.progress.parts) }
-  if (active) return { status: 'pending' }
   const saved = matching.find(job => planComplete(job.progress))
-  if (saved) return { status: 'ok', rev: chapter.rev, parts: await mark(saved.progress.parts) }
+  if (saved && (!active || active.spec?.retake || active.state === 'paused')) {
+    return { status: 'ok', rev: chapter.rev, parts: await mark(saved.progress.parts) }
+  }
+  if (active && active.state !== 'paused') return { status: 'pending' }
   const roles = await library.roles(chapter.book)
   const spec = resolveGenerationOptions({ engine, mode, purpose: 'generate', clean: false }, chapter, roles)
   if (spec.cast) return { status: 'needs-script' }

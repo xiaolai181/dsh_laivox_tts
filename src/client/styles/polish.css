@@ -40,6 +40,9 @@
 .lv-ui .lv-script article p { margin: 0; }
 .lv-script-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .lv-script-status { color: var(--lv-ink-dim); font-size: var(--lv-fs-meta); text-align: right; }
+.lv-script-status[data-error=true] { color: var(--lv-danger, var(--lv-warn)); }
+.lv-script-error { display: block; margin-top: 6px; color: var(--lv-danger, var(--lv-warn)); font-size: var(--lv-fs-meta); line-height: 1.5; }
+.lv-script-retake-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-items: center; }
 .lv-script-extra { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; align-items: center; }
 .lv-script-extra { opacity: 0; }
 .lv-script article:hover .lv-script-extra,
@@ -102,6 +105,7 @@
 @container workbench (max-width: 759px) {
   .lv-ui .lv-script article { grid-template-columns: minmax(0, 1fr); }
   .lv-script-actions { align-items: flex-start; }
+  .lv-script-retake-actions { justify-content: flex-start; }
   .lv-script-extra { opacity: 1; }
   .lv-library-scene .lv-books { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

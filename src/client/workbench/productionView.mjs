@@ -40,7 +40,7 @@ export function productionView(chapter, options = {}, { keyMissing = false } = {
   const playbackId = chapter?.playbackJob?.id ?? null
   const newer = active && (job.purpose ?? 'generate') === 'generate' && job.id !== playbackId
     ? { id: job.id, done: job.synthesis?.done ?? 0, total: job.synthesis?.total ?? job.total ?? 0,
-      scope: job.scope === 'range' || job.retake ? 'range' : 'chapter', state: job.state }
+      scope: job.scope === 'range' || job.retake ? 'range' : 'chapter', state: job.state, retake: Boolean(job.retake) }
     : null
   const filled = chapter?.playbackJob?.filled || (chapter?.media ?? []).filter(part => part.filled).length
   const older = chapter?.previousComplete?.id && chapter.previousComplete.id !== playbackId ? { id: chapter.previousComplete.id } : null
@@ -72,7 +72,8 @@ export function productionView(chapter, options = {}, { keyMissing = false } = {
     save: !active ? null : job.state === 'running'
       ? t('本章有制作正在进行，保存前需要先停止它')
       : t('会停止本章暂停的制作，已合成的音频保留'),
-    retake: running ? t('本章制作结束后可以重新合成') : null,
+    retake: running ? t('本章制作结束后可以重新合成')
+      : job?.state === 'paused' ? t('本章有已暂停的任务，先继续或取消后再重新合成') : null,
     edit: null,
   }
   return { shown, audio, newer, older, next, locks, active }

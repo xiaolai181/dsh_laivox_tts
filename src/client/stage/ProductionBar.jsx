@@ -1,5 +1,5 @@
 import { deferText, translate as t } from '../i18n/locale.mjs'
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { explain } from '../api.mjs'
 import { Icon } from '../components/Icon.jsx'
 import { ActivityMark, LevelBar } from '../components/Metrics.jsx'
@@ -34,7 +34,7 @@ export function jobLine(job, pending) {
 // the one step that can; the plain "continue" comes back once a usage day is open.
 const NEEDS_ACTION = new Set(['quota', 'account', 'membership', 'outdated', 'voice'])
 
-function LaivoxPauseActions({ w, pause, opened, fill }) {
+function LaivoxPauseActions({ w, pause, opened, fill, retry }) {
   const [opening, setOpening] = useState(false)
   async function openDay() {
     setOpening(true)
@@ -58,7 +58,7 @@ function LaivoxPauseActions({ w, pause, opened, fill }) {
     : pause.ledger === 'pack' ? (pause.membershipAvailable ? t('你的会员有效，可以在官网把这把 Key 改回使用会员额度。') : '')
       : pause.packAvailable ? t('你有可用的朗读时长包，可以在官网把这把 Key 改为使用时长包。') : ''
   // With nothing else to do (membership, outdated plugin, no usage day left), finishing with Edge is the main step.
-  const actions = <div className="lv-inline">{main}{fill && <button type="button" className={main ? '' : 'lv-primary'} onClick={fill}>{t("用 Edge 补完剩余段")}</button>}</div>
+  const actions = <div className="lv-inline">{main}{retry && <button type="button" onClick={retry}>{t('重试')}</button>}{fill && <button type="button" className={main ? '' : 'lv-primary'} onClick={fill}>{t("用 Edge 补完剩余段")}</button>}</div>
   if (!switchHint) return actions
   return <>{actions}<small role="status">{switchHint}{w.keyInfo?.keyPage && <>{' '}<a href={w.keyInfo.keyPage} target="_blank" rel="noopener noreferrer">{t("获取或更换 API Key ↗")}</a></>}</small></>
 }
@@ -86,6 +86,9 @@ export function ProductionBar({ w, compact = false }) {
   const showStatus = active && !(job.live && job.state !== 'paused')
   const [cleanOnce, setCleanOnce] = useState(false)
   const [dayOpenedFor, setDayOpenedFor] = useState(null)
+  useEffect(() => {
+    if (job?.state !== 'paused' && dayOpenedFor) setDayOpenedFor(null)
+  }, [job?.id, job?.state])
   const noise = useMemo(() => detectNoiseLines(chapter?.text ?? ''), [chapter?.id, chapter?.rev, chapter?.text])
   const suggestClean = !active && !w.options.clean && !chapter?.editorial?.cleaned && noise.length >= NOISE_SUGGEST_MIN
   if (!chapter) return null
@@ -97,10 +100,13 @@ export function ProductionBar({ w, compact = false }) {
     if (primary.kind === 'start') { setCleanOnce(false); return start() }
   }
   const pause = job?.state === 'paused' && job.laivoxPause && NEEDS_ACTION.has(job.laivoxPause.kind) ? job.laivoxPause : null
-  const blocked = Boolean(pause) && dayOpenedFor !== job.id
+  const keyUnlocked = (w.keySavedAt ?? 0) > 0 && Boolean(job?.id) && !w.resumedAfterKey?.has(job.id)
+  const blocked = Boolean(pause)
+    && !(pause.kind === 'quota' && dayOpenedFor === job.id)
+    && !(pause.kind === 'account' && keyUnlocked)
   // Finishing with Edge: offered when LaiVox cannot go on (a pause above) or kept failing
   // after its automatic retries; never chosen for the user.
-  const canFill = job?.engine === 'laivox' && job.state === 'paused' && !job.fill && job.purpose === 'generate'
+  const canFill = job?.engine === 'laivox' && job.state === 'paused' && !job.fill && !job.retake && job.purpose === 'generate'
     && (partsLeft(job) > 0 || !(Number(job.total) > 0)) && (Boolean(pause) || (Boolean(job.error) && !job.autoResume))
   async function fill() {
     const left = partsLeft(job)
@@ -156,7 +162,8 @@ export function ProductionBar({ w, compact = false }) {
       <LevelBar label={t('制作进度')} progress busy={running} value={progress?.done} max={progress?.total ?? 0}
         tone={job.error ? 'warn' : running ? 'accent' : 'muted'}/>
       {job.laivoxPause?.kind === 'held' && job.laivoxPause.until && <small role="status">{t('暂停至 {time}', { time: new Date(job.laivoxPause.until).toLocaleTimeString() })}</small>}
-      {blocked && !pending && <LaivoxPauseActions w={w} pause={pause} opened={() => setDayOpenedFor(job.id)} fill={canFill ? () => void fill() : null}/>}
+      {blocked && !pending && <LaivoxPauseActions w={w} pause={pause} opened={() => setDayOpenedFor(job.id)} fill={canFill ? () => void fill() : null}
+        retry={((pause.kind === 'quota' && !pause.canAuthorize) || pause.kind === 'membership') ? () => void w.jobAction(job.id, 'resume') : null}/>}
       {!blocked && canFill && !pending && <div className="lv-inline"><button type="button" onClick={() => void fill()}>{t("用 Edge 补完剩余段")}</button></div>}
       {(job.error || job.autoResume) && <details><summary>{t("详情")}</summary><JobProgress job={job} actionPending={pending}/></details>}
     </div>}

@@ -29,7 +29,10 @@
 .lv-chapter-dot[data-state=已暂停] { border-color:var(--lv-warn); }
 .lv-chapter-dot[data-state=失败] { background:var(--lv-danger); }
 .lv-toast-region { position:absolute; right:16px; bottom:calc(var(--lv-dock-inset,0px) + 12px); pointer-events:none; max-width:min(360px,calc(100% - 32px)); z-index:30; }
-.lv-toast { padding:10px 18px; border:1px solid var(--lv-line); border-radius:var(--lv-r-m); background:var(--lv-elevated); box-shadow:var(--lv-shadow); }
+.lv-toast { pointer-events:auto; display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 14px 10px 18px; border:1px solid var(--lv-line); border-radius:var(--lv-r-m); background:var(--lv-elevated); box-shadow:var(--lv-shadow); }
+.lv-toast a { color:var(--lv-accent); font-weight:600; text-decoration:none; white-space:nowrap; }
+.lv-toast a:hover { text-decoration:underline; }
+.lv-toast-close { margin-left:auto; border:0; background:transparent; color:var(--lv-ink-mute); padding:2px 6px; min-height:24px; line-height:1; }
 @container (min-width:1024px) { .lv-rail-toggle { display:none!important; } }
 @container (max-width:759px) { .lv-top { gap:7px; padding:0 8px; } .lv-book-switcher {display:none;} .lv-scene-tabs button {padding:5px 10px!important;} .lv-brand strong {display:none;} .lv-task-pill {padding:4px!important;} }
 @container (max-width:380px) {

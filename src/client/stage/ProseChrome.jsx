@@ -4,11 +4,17 @@ import React, { useEffect, useRef, useState } from 'react'
 // In full text the chapter title and the view switch live in the scrolling
 // column. Scrolling down tucks them away; scrolling up brings them back
 // without returning to the top of the chapter.
-export function ProseChrome({ enabled, children }) {
+export function ProseChrome({ enabled, forceOpen = false, children }) {
   const anchor = useRef(null)
   const rail = useRef(null)
   const [open, setOpen] = useState(true)
   const [progress, setProgress] = useState(null)
+  const prevForce = useRef(forceOpen)
+
+  useEffect(() => {
+    if (forceOpen && !prevForce.current) setOpen(true)
+    prevForce.current = forceOpen
+  }, [forceOpen])
 
   useEffect(() => {
     if (!enabled) return
