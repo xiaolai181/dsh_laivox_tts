@@ -166,10 +166,12 @@ export function apply(ctx) {
       if (shutdown.signal.aborted) return
       const hidden = hiddenNow()
       let fast = false
+      let keepAlive = false
       try {
-        const { chapter, job, settled } = player.getSnapshot()
-        fast = Boolean(chapter && job && !settled)
-        if (!hidden && fast && !busy) {
+        const { chapter, job, settled, phase, autoResuming } = player.getSnapshot()
+        fast = Boolean(chapter && job && (!settled || autoResuming))
+        keepAlive = fast && (['playing', 'buffering'].includes(phase) || autoResuming)
+        if ((!hidden || keepAlive) && fast && !busy) {
           busy = true
           try {
             if (ctx.layout.panelInfo.getSnapshot().activePanelId === PANEL) return
@@ -181,7 +183,7 @@ export function apply(ctx) {
           finally { busy = false }
         }
       } finally {
-        if (!shutdown.signal.aborted) timer = setTimeout(tick, nextPollDelay({ hidden, fast, fastMs: 1500, idleMs: 10_000 }))
+        if (!shutdown.signal.aborted) timer = setTimeout(tick, nextPollDelay({ hidden, fast, fastMs: 1500, idleMs: 10_000, keepAlive, keepAliveMs: 8000 }))
       }
     }
     const wake = () => {

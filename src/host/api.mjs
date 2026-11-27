@@ -1,6 +1,6 @@
 import { KEEP_PREVIOUS_AUDIO } from '../domain/production.mjs'
 import { narratorDefaultFor } from '../domain/voice-assignment.mjs'
-import { engineErrorCode, KEY_PAGE, laivoxAuthorize, laivoxCatalog, laivoxPackCatalog, laivoxStatusView, laivoxUsage, PACK_PAGE } from './engines/index.mjs'
+import { engineErrorCode, KEY_PAGE, laivoxAuthorize, laivoxCatalog, laivoxHandoff, laivoxPackCatalog, laivoxStatusView, laivoxUsage, PACK_PAGE, START_PAGE } from './engines/index.mjs'
 import { choosePlayable, isComplete, staleReason } from './playable.mjs'
 import { edgeVoices } from './edge.mjs'
 import { modelDirectory, modelReasoning } from './editorial.mjs'
@@ -67,6 +67,7 @@ export function jobSummary(job) {
     ...(progress.yieldWait ? { yieldWait: true } : {}),
     ...(Number.isSafeInteger(progress.retryAfter) ? { retryAfter: progress.retryAfter } : {}),
     laivoxPause: progress.laivoxPause ?? null,
+    ...(job.state === 'paused' && progress.autoResume && typeof progress.autoResume === 'object' ? { autoResume: progress.autoResume } : {}),
     fill: Boolean(progress.fill), filled: (progress.parts ?? []).filter(part => part.primary).length,
     total, counts, scope: job.spec?.only ? 'range' : 'chapter',
     // Still scripting while it synthesizes: more parts will follow (see cast-pipeline.mjs).
@@ -238,16 +239,17 @@ export function registerAPI(ctx, { library, jobs, imports, chat, gatewayFor, key
     })
   }
   const media = registerMediaRoutes(route, library, mp3?.encodePcm)
-  route('models', 'GET', () => modelDirectory(ctx.llm))
+  route('models', 'GET', request => modelDirectory(ctx.llm, { signal: request.signal }))
   route('models/reasoning', 'GET', async (request, params) => {
     const provider = params.get('provider')
     const model = params.get('model')
-    if (!(await modelDirectory(ctx.llm)).some(item => item.provider === provider && item.model === model)) {
+    if (!(await modelDirectory(ctx.llm, { provider, signal: request.signal })).some(item => item.provider === provider && item.model === model)) {
       throw new Error('MODEL_NOT_CONFIGURED')
     }
     return modelReasoning(ctx.llm, provider, model, request.signal)
   })
-  route('key', 'GET', async () => ({ ...await keyStatus(), keyPage: KEY_PAGE, packPage: PACK_PAGE }))
+  route('key', 'GET', async () => ({ ...await keyStatus(), keyPage: KEY_PAGE, packPage: PACK_PAGE, startPage: START_PAGE }))
+  route('laivox/handoff', 'POST', request => laivoxHandoff(gatewayFor, request.signal))
   // LaiVox account, membership and usage: only asked when the LaiVox card is open
   // or a paused job offers to open a usage day.
   route('laivox/status', 'GET', async (request, params) => laivoxStatusView(await gatewayFor(undefined, request.signal, params.get('fresh') === '1')))
@@ -291,9 +293,11 @@ export function registerAPI(ctx, { library, jobs, imports, chat, gatewayFor, key
       return library.renameBook(body.book, title)
     }
     if (body.action === 'delete') {
-      const cancelled = await jobs.cancelForBook(body.book)
-      const result = await library.deleteBook(body.book)
-      return { ...result, cancelled }
+      return media.guardBook(body.book, async () => {
+        const cancelled = await jobs.cancelForBook(body.book)
+        const result = await library.deleteBook(body.book)
+        return { ...result, cancelled }
+      })
     }
     throw new Error('INVALID_INPUT')
   })
@@ -331,7 +335,7 @@ export function registerAPI(ctx, { library, jobs, imports, chat, gatewayFor, key
     idOf(body.chapter)
     const row = await library.chapterHeader(body.chapter)
     if (!row) throw new Error('CHAPTER_NOT_FOUND')
-    await production.save({ id: body.chapter, base: row,
+    return production.save({ id: body.chapter, base: row,
       patch: { roles: [{ id: body.role, voices: { [body.engine]: body.voice } }] } }, request.signal, true)
   })
   route('import/upload', 'POST', (request, params) => {

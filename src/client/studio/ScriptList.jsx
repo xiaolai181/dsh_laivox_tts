@@ -15,11 +15,12 @@ import { productionView } from '../workbench/productionView.mjs'
 import { previewChannel } from '../player/previewChannel.mjs'
 import { rovingIndex } from './roving.mjs'
 import { pauseActionSpec } from '../workbench/pauseNotice.mjs'
+import { notePackOpened } from '../workbench/packLink.mjs'
 import { useVoiceDirectory, VoicePicker } from '../editorial/VoicePicker.jsx'
 import { effectiveVoices, narratorDefaultFor } from './voiceLabels.mjs'
 
 const labels = { neutral: '平静', happy: '喜悦', sad: '悲伤', angry: '愤怒', afraid: '害怕', tense: '紧张', gentle: '温柔' }
-export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, notify, busy, player, newRole, options, generate, jobAction, actions, openSettings, openRoles, openDay, packPage, focus, onFocusApplied, pendingCount = 0, confirmSave, saveVoice, narratorSetting, keyInfo }) {
+export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, notify, busy, player, newRole, options, generate, jobAction, actions, openSettings, openRoles, openDay, packPage, onPreparePack, focus, onFocusApplied, pendingCount = 0, confirmSave, saveVoice, narratorSetting, keyInfo }) {
   const listRef = useRef(null)
   const [roleFilter, setRoleFilter] = useState('')
   const [search, setSearch] = useState('')
@@ -314,7 +315,7 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
             {pauseSpec?.type === 'settings' && openSettings && <button type="button" className="lv-primary" onClick={openSettings}>{t(pauseSpec.label)}</button>}
             {pauseSpec?.type === 'openDay' && openDay && <button type="button" className="lv-primary" onClick={openDay}>{t(pauseSpec.label)}</button>}
             {pauseSpec?.type === 'roles' && openRoles && <button type="button" className="lv-primary" onClick={openRoles}>{t(pauseSpec.label)}</button>}
-            {pauseSpec?.type === 'link' && <a className="lv-link" href={pauseSpec.href} target="_blank" rel="noopener noreferrer">{t(pauseSpec.label)}</a>}
+            {pauseSpec?.type === 'link' && <a className="lv-link" href={pauseSpec.href} target="_blank" rel="noopener noreferrer" onPointerEnter={onPreparePack} onFocus={onPreparePack} onClick={() => notePackOpened()}>{t(pauseSpec.label)}</a>}
             <button type="button" className="lv-subtle" disabled={Boolean(opPending)} aria-label={t('重试重新合成第 {v1} 段', { v1: number })} onClick={() => void jobAction(op.id, 'resume')}>{opPending === 'resume' ? t('正在继续') : t('重试')}</button>
             <button type="button" className="lv-subtle" disabled={Boolean(opPending)} aria-label={t('取消重新合成第 {v1} 段', { v1: number })} onClick={() => void jobAction(op.id, 'cancel')}>{opPending === 'cancel' ? t('正在取消') : t('取消')}</button>
           </span>}

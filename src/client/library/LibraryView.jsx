@@ -17,9 +17,15 @@ function exportText(state) {
   return t("导出失败{v1}", { v1: state.error ? '：' + displayText(state.error) : '' })
 }
 
+const chapterKey = chapter => chapter.offset + ':' + chapter.count
+
 export function ImportPreview({ entry, close, openBook, refresh, published, decide }) {
   const [data, setData] = useState(entry.data)
   const [exclude, setExclude] = useState(new Set())
+  const dataRef = useRef(data)
+  const excludeRef = useRef(exclude)
+  dataRef.current = data
+  excludeRef.current = exclude
   const [duplicate, setDuplicate] = useState(null)
   const [busy, setBusy] = useState(false)
   const [reviewCanLeave, setReviewCanLeave] = useState(false)
@@ -30,11 +36,27 @@ export function ImportPreview({ entry, close, openBook, refresh, published, deci
   const [focused, setFocused] = useState(null)
   const pending = useRef(false)
 
+  function updateExclude(next) {
+    excludeRef.current = next
+    setExclude(next)
+  }
+
   function update(next) {
+    const previous = dataRef.current
+    const prevExclude = excludeRef.current
+    dataRef.current = next
     setData(next)
-    if (next.revision !== data.revision) {
+    if (next.revision !== previous.revision) {
       setPage(0)
-      setExclude(new Set())
+      if (next.encoding !== previous.encoding) {
+        updateExclude(new Set())
+        if (prevExclude.size > 0) setMessage(deferText(() => t('编码已切换，请重新确认要跳过的章节。')))
+      } else {
+        const nextKeys = new Set((next.chapters ?? []).map(chapterKey))
+        const kept = new Set([...prevExclude].filter(key => nextKeys.has(key)))
+        updateExclude(kept)
+        if (kept.size < prevExclude.size) setMessage(deferText(() => t('部分章节范围已变动，请确认待导入列表。')))
+      }
       setDuplicate(null)
       setFocused(null)
     }
@@ -68,7 +90,7 @@ export function ImportPreview({ entry, close, openBook, refresh, published, deci
     finally { pending.current = false; setBusy(false) }
   }
 
-  const publish = force => perform('publish', { revision: data.revision, duplicate: force, chapters: data.chapters.flatMap((_, i) => exclude.has(i) ? [] : [i]) })
+  const publish = force => perform('publish', { revision: data.revision, duplicate: force, chapters: data.chapters.flatMap((chapter, i) => exclude.has(chapterKey(chapter)) ? [] : [i]) })
   return <section className="lv-preview" aria-label={t("导入预览")}>
     <div className="lv-heading"><div><small className="lv-kicker">{t("导入预览")}</small><h1>{data.title}</h1><small>{data.format.toUpperCase()} · {data.chapters.length}{" " + t("章")}</small></div><button onClick={close} disabled={busy && !reviewCanLeave}>{t("暂存稍后导入")}</button></div>
     <details className="lv-import-advanced" open={focused ? true : undefined}>
@@ -86,13 +108,13 @@ export function ImportPreview({ entry, close, openBook, refresh, published, deci
     {data.warnings?.includes('PDF_PARTIAL_IMAGE_PAGES') && <small role="status">{t("部分页面未检测到文字（可能是插图或扫描页），已自动跳过。")}</small>}
     {data.splitCount > 0 && <small role="status">{t("有 {v1} 章因超过 10 万字已自动拆分。", { v1: data.splitCount })}</small>}
     <div className="lv-import-grid"><div className="lv-preview-list" aria-label={t("待导入章节")}>
-      {data.chapters.slice(page * 80, page * 80 + 80).map((chapter, local) => {
-        const index = page * 80 + local
-        return <div className="lv-import-item" key={chapter.offset}><input type="checkbox" aria-label={t("导入 {v1}", { v1: chapter.title })} disabled={busy} checked={!exclude.has(index)} onChange={event => {
+      {data.chapters.slice(page * 80, page * 80 + 80).map(chapter => {
+        const key = chapterKey(chapter)
+        return <div className="lv-import-item" key={chapter.offset}><input type="checkbox" aria-label={t("导入 {v1}", { v1: chapter.title })} disabled={busy} checked={!exclude.has(key)} onChange={event => {
           const next = new Set(exclude)
-          if (event.target.checked) next.delete(index)
-          else next.add(index)
-          setExclude(next)
+          if (event.target.checked) next.delete(key)
+          else next.add(key)
+          updateExclude(next)
         }}/><button className="lv-link" type="button" disabled={busy} onClick={() => setFocused(chapter)}>{chapter.title}</button>
           <small>{cutLabels[chapter.kind] ? t(cutLabels[chapter.kind]) + ' · ' : ''}{chapter.count.toLocaleString()}{" " + t("字符")}</small>
         </div>
@@ -133,6 +155,7 @@ export function LibraryView({ books, chapters, selectedBook, active, mode = 'boo
   const data = books.value
   const contents = chapters.value
   const rows = Array.isArray(contents) ? contents : []
+  const listKey = rows.map(row => row.id).join(',')
   const activeRef = useRef(null)
   const contentsHeading = useRef(null)
   const moveToContents = useRef(false)
@@ -180,7 +203,7 @@ export function LibraryView({ books, chapters, selectedBook, active, mode = 'boo
       buttons.find(button => button.dataset.bookId === targetId)?.focus()
     }
   }, [mode])
-  useEffect(() => { anchor.current = null }, [book, batch])
+  useEffect(() => { anchor.current = null }, [book, batch, chapterQuery, listKey])
   function toggleAt(row, index, shift) {
     if (shift && anchor.current != null) {
       const from = Math.min(anchor.current, index)

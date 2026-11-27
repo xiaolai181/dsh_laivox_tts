@@ -1,14 +1,15 @@
 import { deferText, displayText, isDeferredText, translate as t } from '../i18n/locale.mjs'
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { explain, formatBytes, get, post, url } from '../api.mjs'
 import { nextPollDelay } from './polling.mjs'
-import { chapterBase, clearLastChapter, dropRoleVoice, lastChapterKey, mergeProgress, mergeRoles, resolveRoleConflict, roleDraftUpdate } from './state.mjs'
-import { decideListen } from '../player/listenPlan.mjs'
+import { chapterBase, clearLastChapter, dropRoleVoice, lastChapterKey, liftDraftBase, mergeProgress, mergeRoles, resolveRoleConflict, roleDraftUpdate } from './state.mjs'
+import { decideListen, runFollowListen } from '../player/listenPlan.mjs'
 import { KEEP_PREVIOUS_AUDIO } from '../../domain/production.mjs'
 import { estimateAiCalls } from '../../domain/ai.mjs'
 import { createSettingsQueue } from './settingsQueue.mjs'
 import { openUsageDay } from './laivox.mjs'
-import { diffNewPausedJobs, pauseNoticeFor, pauseNoticeKey, scanPausedJobs } from './pauseNotice.mjs'
+import { diffNewPausedJobs, pauseActionSpec, pauseNoticeFor, pauseNoticeKey, scanPausedJobs } from './pauseNotice.mjs'
+import { ensurePackLink, notePackOpened, takePackReturn, usePackLink } from './packLink.mjs'
 
 const pageSize = 80
 const activeJob = job => ['queued', 'running', 'paused'].includes(job?.state)
@@ -76,12 +77,28 @@ export function useWorkbench(player, navigation, memory) {
   const busyRef = useRef(new Set())
   const jobRef = useRef(new Map())
   const pendingListen = useRef(null)
+  const listenOrder = useRef(0)
   const steered = useRef(new Set())
   const navRead = useRef(null)
   const noticeTimer = useRef(null)
   const exportRef = useRef({ timer: null })
   const keyInfoRef = useRef(keyInfo)
   keyInfoRef.current = keyInfo
+  const keySavedAtRef = useRef(keySavedAt)
+  keySavedAtRef.current = keySavedAt
+  const requestHandoff = useCallback(() => post('laivox/handoff'), [])
+  const packIdentity = keyInfo?.configured ? [keyInfo.account ?? '', keyInfo.masked ?? '', keySavedAt].join('|') : ''
+  const needPackLink = Boolean(packIdentity && keyInfo?.packPage && (
+    (chapter?.operation?.state === 'paused' && pauseActionSpec(chapter.operation.laivoxPause, keyInfo.packPage)?.type === 'link') ||
+    (typeof notice === 'object' && !isDeferredText(notice) && (notice?.packLink === true || (typeof notice?.href === 'string' && notice.href.startsWith(keyInfo.packPage))))
+  ))
+  const packLink = usePackLink(keyInfo?.packPage, needPackLink, requestHandoff, packIdentity)
+  const liveNotice = notice && typeof notice === 'object' && !isDeferredText(notice) && notice.packLink
+    ? { ...notice, href: packLink || keyInfo?.packPage || notice.href }
+    : notice
+  const preparePackLink = useCallback(() => (packIdentity ? ensurePackLink(requestHandoff, packIdentity) : ''), [requestHandoff, packIdentity])
+  const packLinkRef = useRef(packLink)
+  packLinkRef.current = packLink
   const pausedBaselineRef = useRef(null)
   const seenPausedRef = useRef(new Set())
   const pendingPausedEdgeRef = useRef(null)
@@ -134,7 +151,12 @@ export function useWorkbench(player, navigation, memory) {
     if (!life.current || !pauseNoticeKey(job)) return
     const item = pauseNoticeFor(job, {
       explain,
-      packPage: keyInfoRef.current?.packPage,
+      packPage: packLinkRef.current || keyInfoRef.current?.packPage,
+      onPreparePack: () => {
+        const info = keyInfoRef.current
+        if (!info?.configured) return
+        void ensurePackLink(requestHandoff, [info.account ?? '', info.masked ?? '', keySavedAtRef.current].join('|'))
+      },
       currentChapterId: active.current?.view?.id,
       openDay: () => void openUsageDayAction(),
       openSettings: () => setPanel('production'),
@@ -224,10 +246,14 @@ export function useWorkbench(player, navigation, memory) {
   async function saveRoleVoice(roleId, engine, voice, extra = {}) {
     const current = active.current?.view
     if (!current) throw new Error('CHAPTER_NOT_FOUND')
+    const before = chapterBase(current)
+    const textSnapshot = current.text
+    const editorialSnapshot = current.editorialResultJob ?? null
     const confirmedCount = Number.isInteger(extra.confirmedCount) ? extra.confirmedCount : null
     let rejoined = false
+    let committed = null
     try {
-      try { await post('role/save', { chapter: current.id, role: roleId, engine, voice }) }
+      try { committed = await post('role/save', { chapter: current.id, role: roleId, engine, voice }) }
       catch (error) {
         // A voice change affects the whole book: unfinished tasks of the book must stop first.
         if (error?.message !== 'TASKS_BLOCK_SAVE') throw error
@@ -235,7 +261,7 @@ export function useWorkbench(player, navigation, memory) {
         const allow = confirmedCount != null && total <= confirmedCount
         const decision = await stopBlockingTasks(error.details, allow ? { preconfirmed: true, allowBook: true } : {})
         if (!decision) throw error
-        await post('role/save', { chapter: current.id, role: roleId, engine, voice })
+        committed = await post('role/save', { chapter: current.id, role: roleId, engine, voice })
         if (decision.stopped?.length) { offerRejoin(decision.stopped); rejoined = true }
       }
       const next = dropRoleVoice(memory.roles.get(current.book), roleId, engine, voice)
@@ -243,21 +269,24 @@ export function useWorkbench(player, navigation, memory) {
       else memory.roles.delete(current.book)
       if (!rejoined) flashNotice(deferText(() => t('已保存，下次合成生效')))
     } finally {
-      // role/save has no receipt: a timeout may still have saved, so read back.
-      await refresh().catch(() => {})
+      const fresh = await refresh().catch(() => null)
+      const target = committed ?? (fresh ? { rev: fresh.rev, rolesRev: fresh.rolesRev, editorialResultJob: fresh.editorialResultJob ?? null } : null)
+      if (target && fresh && fresh.text === textSnapshot && (fresh.editorialResultJob ?? null) === editorialSnapshot) {
+        if (liftDraftBases(current.id, before, target)) repaint()
+      }
     }
   }
   // A role-only save (or a voice-rule upgrade) bumps this chapter without
   // rewriting its text or script. Drafts still based on the revision we just
   // replaced move onto the new base; a draft that was already stale stays put.
-  function liftDraftBases(chapterId, beforeRev, committed) {
-    if (!committed || committed.rev !== beforeRev + 1) return false
-    const next = { rev: committed.rev, rolesRev: committed.rolesRev, editorialResultJob: committed.editorialResultJob ?? null }
+  function liftDraftBases(chapterId, before, committed) {
     let moved = false
     const body = memory.drafts.get(chapterId)
-    if (body?.base?.rev === beforeRev) { memory.drafts.set(chapterId, { ...body, base: next }); moved = true }
+    const nextBody = liftDraftBase(body, before, committed)
+    if (nextBody !== body) { memory.drafts.set(chapterId, nextBody); moved = true }
     const script = memory.scripts.get(chapterId)
-    if (script?.base?.rev === beforeRev) { memory.scripts.set(chapterId, { ...script, base: next }); moved = true }
+    const nextScript = liftDraftBase(script, before, committed)
+    if (nextScript !== script) { memory.scripts.set(chapterId, nextScript); moved = true }
     return moved
   }
   // Name, gender and age save on their own. The body must not include the open
@@ -283,7 +312,7 @@ export function useWorkbench(player, navigation, memory) {
         committed = (await operation(key, 'production/save', { body, snapshot: null })).result
         if (decision.stopped?.length) { offerRejoin(decision.stopped); rejoined = true }
       }
-      liftDraftBases(current.id, before.rev, committed)
+      liftDraftBases(current.id, before, committed)
       await refresh().catch(() => {})
       setBlocked(null)
       setError('')
@@ -319,8 +348,8 @@ export function useWorkbench(player, navigation, memory) {
       return false
     } finally {
       const fresh = await refresh().catch(() => null)
-      if (ok && fresh && fresh.rev === before.rev + 1 && fresh.text === text && (fresh.editorialResultJob ?? null) === editorialResultJob) {
-        if (liftDraftBases(current.id, before.rev, { rev: fresh.rev, rolesRev: fresh.rolesRev, editorialResultJob: fresh.editorialResultJob ?? null })) repaint()
+      if (ok && fresh && fresh.text === text && (fresh.editorialResultJob ?? null) === editorialResultJob) {
+        if (liftDraftBases(current.id, before, { rev: fresh.rev, rolesRev: fresh.rolesRev, editorialResultJob: fresh.editorialResultJob ?? null })) repaint()
       }
     }
   }
@@ -660,7 +689,10 @@ export function useWorkbench(player, navigation, memory) {
       return false
     }
     const previous = active.current?.view
-    if (target.chapter && target.chapter !== previous?.id) pendingListen.current = null
+    if (target.new || (target.chapter && target.chapter !== previous?.id)) {
+      listenOrder.current++
+      pendingListen.current = null
+    }
     const order = ++navOrder.current
     navRead.current?.abort()
     const abort = new AbortController()
@@ -767,6 +799,10 @@ export function useWorkbench(player, navigation, memory) {
     let inFlight = false
     let again = false
     const hiddenNow = () => typeof document !== 'undefined' && document.hidden
+    const activePlaybackNow = () => {
+      const snap = player.getSnapshot()
+      return Boolean(snap.chapter && snap.job && ((!snap.settled && ['playing', 'buffering'].includes(snap.phase)) || snap.autoResuming))
+    }
     async function poll() {
       if (!life.current) return
       if (inFlight) { again = true; return }
@@ -792,9 +828,9 @@ export function useWorkbench(player, navigation, memory) {
           pendingBaselineShrinkRef.current = false
         }
         setJobCounts(counts)
-        // A hidden tab still refreshes the counters but skips the chapter read
-        // (and the re-render it would trigger).
-        if (!hiddenNow()) await refresh(abort.signal)
+        // A hidden tab still refreshes the counters and active playback chapters,
+        // skipping background idle chapter reads.
+        if (!hiddenNow() || activePlaybackNow()) await refresh(abort.signal)
         if (!abort.signal.aborted && life.current) {
           if (pausedBaselineRef.current === null) {
             if ((counts.paused ?? 0) === 0) {
@@ -875,13 +911,16 @@ export function useWorkbench(player, navigation, memory) {
           if (again) { again = false; void poll() }
           else {
             const activeCount = (counts.running ?? 0) + (counts.queued ?? 0) + (counts.paused ?? 0)
-            timer = setTimeout(poll, nextPollDelay({ hidden: hiddenNow(), fast: activeCount > 0, fastMs: 2200, idleMs: 8000 }))
+            timer = setTimeout(poll, nextPollDelay({ hidden: hiddenNow(), fast: activeCount > 0, fastMs: 2200, idleMs: 8000, keepAlive: activePlaybackNow(), keepAliveMs: 8000 }))
           }
         }
       }
     }
     const wake = () => {
       if (hiddenNow() || !life.current) return
+      if (takePackReturn()) {
+        try { window.dispatchEvent(new Event('lv-laivox-refresh')) } catch { /* The settings card also reloads when opened. */ }
+      }
       if (pendingToastRef.current) {
         const queued = pendingToastRef.current
         pendingToastRef.current = null
@@ -1110,10 +1149,11 @@ export function useWorkbench(player, navigation, memory) {
   }
 
   async function jobAction(id, action) {
-    if (jobRef.current.has(id)) return
+    if (jobRef.current.has(id)) return { ok: false, busy: true }
     if (action === 'cancel' && !await decide({ title: deferText(() => t('取消这个任务？')), text: deferText(() => t('任务将结束。已经生成的音频仍可播放。')),
-      choices: [['cancel', deferText(() => t('取消任务'))], [null, deferText(() => t('保留任务'))]], destructive: true })) return
+      choices: [['cancel', deferText(() => t('取消任务'))], [null, deferText(() => t('保留任务'))]], destructive: true })) return { ok: false, cancelled: true }
     jobRef.current.set(id, action); setActions(new Map(jobRef.current))
+    let result = { ok: true }
     try {
       await post('jobs/action', { id, action })
       if (action === 'resume' || action === 'cancel' || action === 'fill-edge') forgetPausedJob(id)
@@ -1129,12 +1169,16 @@ export function useWorkbench(player, navigation, memory) {
     catch (error) {
       const latest = await get('jobs/item', { id }).catch(() => null)
       const accepted = { pause: ['paused','completed'], resume: ['queued','running','completed'], cancel: ['cancelled','completed'], 'fill-edge': ['queued','running','completed'] }
-      if (!accepted[action].includes(latest?.state)) errors(error)
+      if (!accepted[action].includes(latest?.state)) {
+        errors(error)
+        result = { ok: false, error }
+      }
     } finally {
       jobRef.current.delete(id)
       if (life.current) { setActions(new Map(jobRef.current)); changeShelf(n => n + 1) }
       await refresh().catch(errors)
     }
+    return result
   }
 
   async function clearAudio(target) {
@@ -1300,72 +1344,37 @@ export function useWorkbench(player, navigation, memory) {
   async function listenFrom(start, offset = 0) {
     const view = active.current?.view
     if (!view || !Number.isFinite(start)) return
+    const order = ++listenOrder.current
     const runningMode = view.operation && ['queued', 'running', 'paused'].includes(view.operation.state) ? view.operation.mode : null
     const decision = decideListen({ chapter: view, playerJob: player.getSnapshot().job, start, offset, mode: runningMode || options.mode })
-    await followListen(decision, view.id, start, offset)
+    await followListen(decision, view.id, start, offset, order)
   }
-  async function followListen(decision, chapterId, start, offset) {
-    if (decision.type === 'play') {
-      pendingListen.current = null
-      player.seek(decision.n, offset)
-      player.play()
-      return
-    }
-    if (decision.type === 'mismatch') {
-      flashNotice(deferText(() => t('当前任务是{mode}，先等它结束或停止后，再按现在的模式从这里听', { mode: t(modeLabel[decision.mode] ?? '另一种模式') })))
-      return
-    }
-    if (decision.type === 'start') {
-      const result = await generate('generate', false, '', { focusStart: decision.focusStart, listen: true })
-      if (!result?.ok) {
-        if (result?.reason === 'busy') flashNotice(deferText(() => t('正在处理上一个操作')))
-        if (result?.reason === 'pending') flashNotice(deferText(() => t('上一次制作还在确认，请稍候')))
-        return
-      }
-      pendingListen.current = { chapter: chapterId, start }
-      consumeListen()
-      return
-    }
-    if (decision.type === 'adopt') {
-      await refresh(undefined, decision.id, true).catch(errors)
-      const nextView = active.current?.view
-      const nextMode = nextView?.operation && ['queued', 'running', 'paused'].includes(nextView.operation.state) ? nextView.operation.mode : options.mode
-      const next = decideListen({ chapter: nextView, playerJob: player.getSnapshot().job, start, offset, mode: nextMode || options.mode })
-      if (next.type !== 'adopt') await followListen(next, chapterId, start, offset)
-      return
-    }
-    try {
-      if (decision.scope === 'range') {
-        const included = await includeRange(decision.id, decision.start, decision.end)
-        if (!included) {
-          const operation = active.current?.view?.operation
-          if (!operation || !['queued', 'running', 'paused'].includes(operation.state)) {
-            await followListen({ type: 'start', focusStart: start }, chapterId, start, offset)
-          }
-          return
-        }
-      }
-      if (decision.type === 'resume' || decision.n == null) {
-        await post('jobs/action', { id: decision.id, action: 'resume', start: decision.start })
-      } else if (decision.scope !== 'range') {
-        const { focused } = await post('jobs/action', { action: 'focus', id: decision.id, n: decision.n })
-        if (focused) flashNotice(deferText(() => t('已优先合成这里，稍候即可收听')))
-        if (!focused) {
-          const operation = active.current?.view?.operation
-          if (!operation || !['queued', 'running', 'paused'].includes(operation.state)) {
-            await followListen({ type: 'start', focusStart: start }, chapterId, start, offset)
-          } else pendingListen.current = { chapter: chapterId, start }
-          return
-        }
-      } else if (decision.n != null) {
-        await post('jobs/action', { action: 'focus', id: decision.id, n: decision.n }).catch(() => {})
-      }
-      pendingListen.current = { chapter: chapterId, start }
-      await refresh().catch(errors)
-      consumeListen()
-    } catch (error) { errors(error) }
+  function followListen(decision, chapterId, start, offset, order = listenOrder.current) {
+    return runFollowListen({
+      isStale: (ord, cid) => !life.current || ord !== listenOrder.current || active.current?.view?.id !== cid,
+      getView: () => active.current?.view,
+      getPlayerJob: () => player.getSnapshot().job,
+      getMode: () => options.mode,
+      seekAndPlay: (n, off) => { player.seek(n, off); player.play() },
+      setPending: (chap, pos) => { pendingListen.current = { chapter: chap, start: pos } },
+      clearPending: () => { pendingListen.current = null },
+      consumeListen,
+      generate: focusStart => generate('generate', false, '', { focusStart, listen: true }),
+      refresh: (jobId, adopt) => refresh(undefined, jobId, adopt),
+      includeRange,
+      resumeJob: (id, begin) => post('jobs/action', { id, action: 'resume', start: begin }),
+      focusJob: (id, n) => post('jobs/action', { action: 'focus', id, n }),
+      flashMismatch: mode => flashNotice(deferText(() => t('当前任务是{mode}，先等它结束或停止后，再按现在的模式从这里听', { mode: t(modeLabel[mode] ?? '另一种模式') }))),
+      flashBusy: () => flashNotice(deferText(() => t('正在处理上一个操作'))),
+      flashPending: () => flashNotice(deferText(() => t('上一次制作还在确认，请稍候'))),
+      flashFocused: () => flashNotice(deferText(() => t('已优先合成这里，稍候即可收听'))),
+      onError: errors,
+    }, decision, chapterId, start, offset, order)
   }
-  function clearListen() { pendingListen.current = null }
+  function clearListen() {
+    listenOrder.current++
+    pendingListen.current = null
+  }
   useEffect(() => consumeListen(chapter), [chapter])
   useEffect(() => player.subscribe(() => {
     const snap = player.getSnapshot()
@@ -1386,9 +1395,9 @@ export function useWorkbench(player, navigation, memory) {
     chapter, book, appendBook, creating: Boolean(creation) || !chapter, creationSaved: Boolean(creation?.savedChapter),
     creationPending: memory.operations.has('save:new'), newDraft, editNewDraft,
     draft, scriptDraft, roleDraft, dirty, busy, booting, page, setPage, panel, setPanel,
-    options, reviseOptions, models, reloadModels, keyInfo, keySavedAt, resumedAfterKey, reloadKey, settings: memory.settings, saveSetting, chooseOptions,
+    options, reviseOptions, models, reloadModels, keyInfo, packLink, packRequest: requestHandoff, packIdentity, preparePackLink, notePackOpened, keySavedAt, resumedAfterKey, reloadKey, settings: memory.settings, saveSetting, chooseOptions,
     error: typeof error === 'string' || isDeferredText(error) ? displayText(error) : explain(error), errorCode: error?.message,
-    notice, setNotice, clearNotice, flashNotice, openUsageDayAction, errors, clearError: () => { setError(''); setBlocked(null) }, blocked, decide, dialog, answer, memory, selection, setSelection, shelfVersion,
+    notice: liveNotice, setNotice, clearNotice, flashNotice, openUsageDayAction, errors, clearError: () => { setError(''); setBlocked(null) }, blocked, decide, dialog, answer, memory, selection, setSelection, shelfVersion,
     selectRows, invertRows, clearSelection, selectBook,
     importEntry, showImport, jobCounts, actions, jobAction, queueScope, setQueueScope,
     navigate, cancelCreation, refresh, listenOlder, reloadChapter, save, generate, listenFrom, clearListen, editDraft, editScript, editRole, saveRoleVoice, saveRoleProfile, upgradeVoiceRule, discardRoles, chooseRoleConflict, clearAudio,

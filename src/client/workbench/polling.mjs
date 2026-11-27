@@ -3,7 +3,7 @@
 // uses the caller's fast interval, everything else the idle interval.
 export const HIDDEN_DELAY = 30_000
 
-export function nextPollDelay({ hidden = false, fast = false, fastMs = 2200, idleMs = 8000 } = {}) {
-  if (hidden) return HIDDEN_DELAY
+export function nextPollDelay({ hidden = false, fast = false, fastMs = 2200, idleMs = 8000, keepAlive = false, keepAliveMs = 8000 } = {}) {
+  if (hidden) return keepAlive ? keepAliveMs : HIDDEN_DELAY
   return fast ? fastMs : idleMs
 }

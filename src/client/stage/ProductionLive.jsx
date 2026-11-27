@@ -8,6 +8,7 @@ import { roleColor } from './roleColor.mjs'
 import { buildMosaic } from './liveMosaic.mjs'
 import { emotions } from './ImmersiveLines.jsx'
 import { pauseActionSpec } from '../workbench/pauseNotice.mjs'
+import { notePackOpened } from '../workbench/packLink.mjs'
 
 const STATE_NAMES = { removed: '已清洗移除', pending: '待处理', cast: '已编剧', ready: '已合成' }
 
@@ -35,7 +36,7 @@ function Step({ index, title, count, unit, active, done, stage, state }) {
 // The production as it happens: cleaning, scripting and synthesis on one
 // sheet. Clicking a synthesized block plays from there; clicking one that is
 // not ready yet asks the job to synthesize it next.
-export function ProductionLive({ chapter, operation, player, listenFrom, collapsible = false, packPage, onOpenDay, onOpenSettings, onOpenRoles }) {
+export function ProductionLive({ chapter, operation, player, listenFrom, collapsible = false, packPage, onPreparePack, onOpenDay, onOpenSettings, onOpenRoles }) {
   const live = operation?.live
   const s = useSyncExternalStore(player.subscribe, player.getSnapshot)
   const [open, setOpen] = useState(!collapsible)
@@ -75,7 +76,7 @@ export function ProductionLive({ chapter, operation, player, listenFrom, collaps
       {alertAction?.type === 'openDay' && onOpenDay && <button type="button" className="lv-primary" onClick={onOpenDay}>{t(alertAction.label)}</button>}
       {alertAction?.type === 'settings' && onOpenSettings && <button type="button" className="lv-primary" onClick={onOpenSettings}>{t(alertAction.label)}</button>}
       {alertAction?.type === 'roles' && onOpenRoles && <button type="button" className="lv-primary" onClick={onOpenRoles}>{t(alertAction.label)}</button>}
-      {alertAction?.type === 'link' && <a className="lv-primary" href={alertAction.href} target="_blank" rel="noopener noreferrer">{t(alertAction.label)}</a>}
+      {alertAction?.type === 'link' && <a className="lv-primary" href={alertAction.href} target="_blank" rel="noopener noreferrer" onPointerEnter={onPreparePack} onFocus={onPreparePack} onClick={() => notePackOpened()}>{t(alertAction.label)}</a>}
     </div>}
     {open && activeStep && <LevelBar label={stage === 'synthesizing' ? t('合成进度') : t('AI 处理进度')}
       progress busy={operation.state === 'running'} value={activeStep.count?.done} max={activeStep.count?.total ?? 0}

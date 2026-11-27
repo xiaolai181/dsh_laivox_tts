@@ -36,6 +36,14 @@ export function bindPreviewChannel(player) {
       stop()
       restore?.()
     },
+    cancelPrefix(prefix) {
+      const matchedFlight = typeof flight?.key === 'string' && flight.key.startsWith(prefix)
+      const matchedCurrent = typeof current?.key === 'string' && current.key.startsWith(prefix)
+      if (!matchedFlight && !matchedCurrent) return
+      const restore = matchedFlight ? flight.restore : null
+      stop()
+      restore?.()
+    },
     // Plays blobs from `loads` in order. Each loader receives an abort signal.
     // A newer play, stop, or the player's own preview stop cancels this one.
     async play(key, loads, { restorePlayback = false } = {}) {

@@ -149,3 +149,15 @@ export function mergeProgress(view, progress) {
     : progress?.media
   return { ...view, ...progress, ...(media === undefined ? {} : { media }) }
 }
+
+export function liftDraftBase(draft, before, committed) {
+  if (!draft?.base || !before || !committed) return draft
+  const beforeEd = before.editorialResultJob ?? null
+  const committedEd = committed.editorialResultJob ?? null
+  if (committedEd !== beforeEd) return draft
+  const revStep = committed.rev === before.rev + 1
+  const rolesStep = committed.rev === before.rev && committed.rolesRev === before.rolesRev + 1
+  if (!revStep && !rolesStep) return draft
+  if (draft.base.rev !== before.rev || draft.base.rolesRev !== before.rolesRev || (draft.base.editorialResultJob ?? null) !== beforeEd) return draft
+  return { ...draft, base: { rev: committed.rev, rolesRev: committed.rolesRev, editorialResultJob: committedEd } }
+}

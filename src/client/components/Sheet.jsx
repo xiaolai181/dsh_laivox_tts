@@ -8,16 +8,17 @@ const FOCUSABLE = 'button:not([disabled]),input:not([disabled]),select:not([disa
 // dock. It is not modal: the dock, the chapter and the top bar stay usable, so
 // opening settings or the task list never interrupts listening. Destructive
 // confirmations still use the modal Decision dialog.
-export function Sheet({ title, close, children, className = '' }) {
+export function Sheet({ title, close, children, className = '', suspended = false }) {
   const node = useRef(null)
   const closing = useRef(close)
+  const wasSuspended = useRef(false)
   const label = useId()
   closing.current = close
   useLayoutEffect(() => {
     const sheet = node.current
     const opener = document.activeElement
     const first = sheet.querySelector('[autofocus]') ?? sheet.querySelector('.lv-sheet-body ' + FOCUSABLE.split(',').join(',.lv-sheet-body '))
-    ;(first ?? sheet).focus({ preventScroll: true })
+    if (!suspended) (first ?? sheet).focus({ preventScroll: true })
     return () => {
       // Only hand focus back when it was still inside the panel; a listener who
       // moved on to the dock keeps their place.
@@ -25,13 +26,23 @@ export function Sheet({ title, close, children, className = '' }) {
       if (opener?.isConnected && (!current || current === document.body || sheet.contains(current))) opener.focus({ preventScroll: true })
     }
   }, [])
+  useLayoutEffect(() => {
+    const sheet = node.current
+    if (!sheet) return
+    sheet.inert = suspended
+    if (wasSuspended.current && !suspended) {
+      const first = sheet.querySelector('[autofocus]') ?? sheet.querySelector('.lv-sheet-body ' + FOCUSABLE.split(',').join(',.lv-sheet-body '))
+      ;(first ?? sheet).focus({ preventScroll: true })
+    }
+    wasSuspended.current = suspended
+  }, [suspended])
   function keyDown(event) {
     if (event.key !== 'Escape' || event.defaultPrevented || event.target.closest?.('[popover]')) return
     event.preventDefault()
     event.stopPropagation()
     closing.current()
   }
-  return <aside ref={node} className={'lv-sheet ' + className} role="dialog" aria-modal="false" aria-labelledby={label} tabIndex={-1} onKeyDown={keyDown}>
+  return <aside ref={node} className={'lv-sheet ' + className + (suspended ? ' lv-sheet-suspended' : '')} role="dialog" aria-modal="false" aria-hidden={suspended ? 'true' : undefined} aria-labelledby={label} tabIndex={-1} onKeyDown={keyDown}>
     <header className="lv-sheet-head"><h2 id={label}>{title}</h2><button type="button" className="lv-icon-button" onClick={close} aria-label={t("关闭")}><Icon name="X"/></button></header>
     <div className="lv-sheet-body">{children}</div>
   </aside>

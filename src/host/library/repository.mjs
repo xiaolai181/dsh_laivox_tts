@@ -349,12 +349,15 @@ export async function openLibrary(root, { audioLimit: initialAudioLimit = AUDIO_
       }
       return null
     },
-    // A job still marked running at start-up was cut off by a restart or crash.
-    async requeueInterrupted() { await run("UPDATE jobs SET state='paused',progress=json_set(progress,'$.pauseReason','restart') WHERE state='running'") },
-    async checkpoint(id, state, progress) {
+    // A job still marked running at start-up was cut off by a restart or crash;
+    // clear any scheduled auto-resume timer across paused jobs too.
+    async requeueInterrupted() {
+      await run("UPDATE jobs SET state=CASE WHEN state='running' THEN 'paused' ELSE state END, progress=CASE WHEN state='running' THEN json_remove(json_set(progress,'$.pauseReason','restart'),'$.autoResume') ELSE json_remove(progress,'$.autoResume') END WHERE state='running' OR (state='paused' AND json_extract(progress,'$.autoResume') IS NOT NULL)")
+    },
+    async checkpoint(id, state, progress, { retake = false } = {}) {
       const update = 'UPDATE jobs SET state=?,progress=? WHERE id=?'
       const params = [state, json(progress), id]
-      if (state === 'paused' && progress.error === 'AUDIO_LIMIT') {
+      if (state === 'paused' && progress.error === 'AUDIO_LIMIT' && !retake) {
         await tx([sql(update, params),
           sql("UPDATE jobs SET state='paused',progress=json_set(progress,'$.error',?) WHERE state='queued' AND json_extract(spec,'$.purpose')='generate'", [progress.error])])
       } else await run(update, ...params)

@@ -31,13 +31,42 @@ function modelPriority({ provider, model, name }) {
   return (flash ? 2 : 0) + (provider === 'deepseek-official' ? 1 : 0)
 }
 
-export async function modelDirectory(llm) {
-  const groups = await Promise.all(llm.listProviders().map(async ({ id }) => {
+export async function modelDirectory(llm, { provider, timeoutMs = 8000, signal } = {}) {
+  signal?.throwIfAborted()
+  const providers = typeof provider === 'string' && provider
+    ? llm.listProviders().filter(item => item.id === provider)
+    : llm.listProviders()
+  const groups = await Promise.all(providers.map(async ({ id }) => {
+    const timeout = Number.isFinite(timeoutMs) && timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : null
+    const signals = [signal, timeout].filter(Boolean)
+    const combined = signals.length > 1 ? AbortSignal.any(signals) : (signals[0] ?? undefined)
+    let timer
+    let onAbort
     try {
-      return (await llm.listModels(id)).filter(model => !model.inputModalities || model.inputModalities.includes('text'))
+      const list = await Promise.race([
+        Promise.resolve().then(() => llm.listModels(id, combined)),
+        ...(Number.isFinite(timeoutMs) && timeoutMs > 0
+          ? [new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('provider timeout')), timeoutMs) })]
+          : []),
+        ...(signal
+          ? [new Promise((_, reject) => {
+              if (signal.aborted) { reject(signal.reason ?? new DOMException('Aborted', 'AbortError')); return }
+              onAbort = () => reject(signal.reason ?? new DOMException('Aborted', 'AbortError'))
+              signal.addEventListener('abort', onAbort, { once: true })
+            })]
+          : []),
+      ])
+      return (list ?? []).filter(model => !model.inputModalities || model.inputModalities.includes('text'))
         .map(model => ({ provider: id, model: model.id, name: model.name, maxTokens: model.maxTokens }))
-    } catch { return [] }
+    } catch (error) {
+      if (signal?.aborted) throw error
+      return []
+    } finally {
+      clearTimeout(timer)
+      if (onAbort) signal?.removeEventListener('abort', onAbort)
+    }
   }))
+  signal?.throwIfAborted()
   return groups.flat().sort((a, b) => modelPriority(b) - modelPriority(a))
 }
 
@@ -51,7 +80,7 @@ export async function modelReasoning(llm, provider, model, signal) {
 }
 
 export async function resolvePluginModel(llm, selection, signal) {
-  const models = llm ? await modelDirectory(llm) : []
+  const models = llm ? await modelDirectory(llm, { provider: selection?.provider, signal }) : []
   signal?.throwIfAborted()
   const selected = selection == null ? models[0] : models.find(model => model.provider === selection.provider && model.model === selection.model)
   if (!selected) throw new Error('MODEL_NOT_CONFIGURED')

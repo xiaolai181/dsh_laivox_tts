@@ -64,6 +64,7 @@ export const messages = {
   ROLE_DRAFT_CONFLICT: '配音字段已被更新。请选择保留当前值或草稿值，再保存。',
   AUDIO_LIMIT: '音频存储已满。可在「设置 → 存储」清理旧版音频，或从书架清理音频后继续。',
   AUDIO_IN_USE: '该音频正在下载，下载结束后可清理。',
+  BOOK_EXPORTING: '这本书正在导出，请等导出完成或取消后再删除。',
   TEXT_TOO_LONG: '这一章正文过长，请拆成几章。',
   IMPORT_TYPE_INVALID: '请选择 TXT、EPUB 或 PDF 电子书。',
   IMPORT_TOO_LARGE: '文件大小、EPUB 解压容量或 PDF 内容超过上限，请先分卷。',

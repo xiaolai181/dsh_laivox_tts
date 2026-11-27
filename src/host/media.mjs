@@ -87,10 +87,10 @@ export async function mediaProjection(library, job, detail = true, keys = null) 
 export function registerMediaRoutes(route, library, encodePcm = sharedEncodePcm) {
   const active = new Set()
   const exports = new Map()
-  function occupy(scope) {
+  function occupy(scope, errorCode = 'AUDIO_IN_USE') {
     for (const other of active) {
       if (other.book !== scope.book || (!other.clear && !scope.clear)) continue
-      if (!other.chapter || !scope.chapter || other.chapter === scope.chapter) throw new Error('AUDIO_IN_USE')
+      if (!other.chapter || !scope.chapter || other.chapter === scope.chapter) throw new Error(errorCode)
     }
     active.add(scope)
     return () => active.delete(scope)
@@ -388,5 +388,10 @@ export function registerMediaRoutes(route, library, encodePcm = sharedEncodePcm)
     finally { release() }
   },
   // Books being exported or cleared right now; stale-audio cleanup leaves them alone.
-  busyBooks: () => [...new Set([...active].map(scope => scope.book).filter(Boolean))] }
+  busyBooks: () => [...new Set([...active].map(scope => scope.book).filter(Boolean))],
+  async guardBook(book, fn) {
+    const release = occupy({ book, clear: true }, 'BOOK_EXPORTING')
+    try { return await fn() }
+    finally { release() }
+  } }
 }

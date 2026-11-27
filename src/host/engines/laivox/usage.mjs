@@ -5,6 +5,8 @@
 // response then repeats the same request instead of opening one more day.
 // Pool accounts and pack keys have no days to open: the allowance is granted up
 // front and lasts until it runs out or expires.
+import { PACK_PAGE } from './client.mjs'
+
 const featureOn = status => status?.features?.usage === true
 
 const minutes = value => typeof value === 'number' && Number.isFinite(value) ? value : null
@@ -153,6 +155,14 @@ export function packCatalogView(data) {
     windowDays: Number(data.window_days) > 0 ? Number(data.window_days) : 60,
     thresholdPct: Number(data.renew_threshold_pct) > 0 ? Number(data.renew_threshold_pct) : 90,
   }
+}
+
+export async function laivoxHandoff(gatewayFor, signal, now = Date.now()) {
+  const { client } = await gatewayFor(undefined, signal)
+  const minted = await client.handoff(signal)
+  if (typeof minted?.code !== 'string' || !/^[0-9a-f]{64}$/u.test(minted.code)) throw new Error('LAIVOX_REQUEST_FAILED')
+  const ttl = Math.min(600, Math.max(1, Math.floor(minted.expiresIn)))
+  return { url: PACK_PAGE + '#h=' + minted.code, expiresAt: now + ttl * 1000 }
 }
 
 export async function laivoxPackCatalog(gatewayFor, signal, now = Date.now()) {

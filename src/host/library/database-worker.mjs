@@ -209,8 +209,9 @@ function staleAudio({ apply = false, skipBooks = [] } = {}) {
     }
     const latest = get(`SELECT j.progress progress FROM jobs j WHERE ${completeAudioJobWhere} ORDER BY j.created DESC,j.rowid DESC LIMIT 1`, chapter.id)
     for (const key of partKeys(latest?.progress)) current.add(key)
-    const pinned = parse(chapter.playback)?.job
-    if (typeof pinned === 'string' && pinned) {
+    const playback = parse(chapter.playback)
+    const pinnedJobs = [...new Set([playback?.job, playback?.bookmark?.job].filter(id => typeof id === 'string' && id))]
+    for (const pinned of pinnedJobs) {
       const job = get('SELECT progress FROM jobs WHERE id=? AND chapter=?', pinned, chapter.id)
       for (const key of partKeys(job?.progress)) current.add(key)
     }

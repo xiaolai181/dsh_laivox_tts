@@ -14,7 +14,9 @@ const FADE_STEPS = 30
 // preservesPitch, which is why playback does not use Web Audio.
 function storedVolume(storage) {
   try {
-    const value = Number(storage?.getItem?.('lv-volume'))
+    const raw = storage?.getItem?.('lv-volume')
+    if (raw === null || raw === undefined || String(raw).trim() === '') return 1
+    const value = Number(raw)
     if (Number.isFinite(value) && value >= 0 && value <= 1) return value
   } catch { /* storage can be blocked */ }
   return 1
@@ -29,7 +31,7 @@ export function createPlayerController({
   let active = audio ?? new Audio()
   let standby = spare !== undefined ? spare : (audio ? null : new Audio())
   const elements = [active, standby].filter(Boolean)
-  let state = { chapter: null, title: '', bookTitle: '', job: null, nextId: null, segments: [], n: 0, offset: 0, rate: 1, volume: storedVolume(storage), phase: 'idle', sleep: null, swapped: '' }
+  let state = { chapter: null, title: '', bookTitle: '', job: null, nextId: null, segments: [], n: 0, offset: 0, rate: 1, volume: storedVolume(storage), phase: 'idle', sleep: null, swapped: '', autoResuming: false }
   let source = ''
   let standbySource = ''
   let intent = false
@@ -134,6 +136,7 @@ export function createPlayerController({
       segments: chapter.media, n: partIndex(chapter.media, at), offset: 0, phase: 'idle',
       settled: jobState !== 'running' && jobState !== 'queued',
       generationStopped: jobState === 'paused' || jobState === 'cancelled',
+      autoResuming: jobState === 'paused' && Number.isFinite(chapter.playbackJob?.autoResume?.at),
       growing: false, stale: chapter.playbackStale,
       swapped: { engine: chapter.playbackJob?.engine ?? '' },
     })
@@ -374,6 +377,7 @@ export function createPlayerController({
       const jobState = chapter.playbackJob?.state
       const settled = jobState !== 'running' && jobState !== 'queued'
       const generationStopped = jobState === 'paused' || jobState === 'cancelled'
+      const autoResuming = jobState === 'paused' && Number.isFinite(chapter.playbackJob?.autoResume?.at)
       // The job is still planning more parts (it scripts and synthesizes at once).
       const growing = chapter.playbackJob?.open === true
       if (state.chapter === chapter.id && state.job && job && state.job !== job && !takeFocus && playbackReady(chapter)) {
@@ -395,7 +399,7 @@ export function createPlayerController({
           const saved = chapter.playback?.job === job ? chapter.playback : null
           position = { ...resumePoint(saved, chapter.media), phase: 'idle' }
         }
-        publish({ title: chapter.title ?? state.title, nextId: chapter.nextId ?? null, segments: chapter.media, settled, generationStopped, growing,
+        publish({ title: chapter.title ?? state.title, nextId: chapter.nextId ?? null, segments: chapter.media, settled, generationStopped, autoResuming, growing,
           stale: chapter.playbackStale, ...(takeFocus || state.chapter !== chapter.id ? { swapped: '' } : {}),
           ...position, ...(takeFocus && !record?.failed ? { saveMessage: '', saveFailed: false } : {}) })
         // blocked waits for audio that a stopped job could not make. Once the job
@@ -427,7 +431,7 @@ export function createPlayerController({
         chapter: chapter.id, title: chapter.title, bookTitle: chapter.bookTitle ?? '', job, nextId: chapter.nextId ?? null, segments: chapter.media,
         ...placed,
         rate: saved?.rate ?? state.rate, volume: state.volume, phase: 'idle',
-        settled, generationStopped, growing, stale: chapter.playbackStale, swapped: '', saveMessage: '', saveFailed: Boolean(record?.failed),
+        settled, generationStopped, autoResuming, growing, stale: chapter.playbackStale, swapped: '', saveMessage: '', saveFailed: Boolean(record?.failed),
       })
       overrun = false
       sessionCall(session => {

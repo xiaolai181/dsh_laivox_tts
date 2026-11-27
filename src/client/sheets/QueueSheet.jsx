@@ -1,5 +1,6 @@
-import { displayText, translate as t } from '../i18n/locale.mjs'
-import React from 'react'
+import { deferText, displayText, translate as t } from '../i18n/locale.mjs'
+import React, { useEffect, useState } from 'react'
+import { explain } from '../api.mjs'
 import { Icon } from '../components/Icon.jsx'
 import { Popover } from '../components/Popover.jsx'
 import { JobProgress, jobActive } from '../jobs/JobProgress.jsx'
@@ -8,7 +9,7 @@ import { useQueue } from '../jobs/useQueue.mjs'
 const GROUPS = [['running', '进行中'], ['queued', '等待'], ['paused', '已暂停']]
 const PURPOSE = { clean: '清洗', cast: '编剧', generate: '生成' }
 
-function JobRow({ job, pending, run, open }) {
+function JobRow({ job, pending, error, run, open }) {
   const name = t(PURPOSE[job.purpose] ?? '生成')
   const paused = job.state === 'paused'
   const actionLabel = paused ? t('继续{purpose}', { purpose: name }) : t('暂停{purpose}', { purpose: name })
@@ -18,6 +19,7 @@ function JobRow({ job, pending, run, open }) {
       <button type="button" className="lv-link lv-queue-title" title={job.title} onClick={() => open(job.chapter, job.purpose === 'generate' ? job.id : null)}>
         {job.bookTitle && <span>{job.bookTitle} · </span>}{job.title ?? t('章节')}</button>
       <JobProgress job={job} actionPending={pending}/>
+      {error && <small role="alert" className="lv-job-detail" data-error="true">{displayText(error)}</small>}
     </div>
     {jobActive(job) && <div className="lv-queue-actions">
       <button type="button" className="lv-icon-button" disabled={Boolean(pending)} aria-label={actionLabel} title={actionLabel}
@@ -31,6 +33,18 @@ function JobRow({ job, pending, run, open }) {
 // with finished jobs folded away. Bulk actions live in the ⋯ menu.
 export function QueueSheet({ scope, clearScope, actions, run, open, refreshKey, decide, notify, openStorage }) {
   const q = useQueue({ scope, refreshKey, decide, notify })
+  const [rowError, setRowError] = useState(null)
+  const scopeKey = scope ? (scope.chapter ?? scope.book ?? '') : ''
+  useEffect(() => { setRowError(null) }, [scopeKey])
+  async function handleRun(id, action) {
+    setRowError(current => (current?.id === id ? null : current))
+    const result = await run(id, action)
+    if (result?.ok === false && result.error) {
+      setRowError({ id, message: deferText(() => explain(result.error)) })
+    } else if (result?.ok) {
+      setRowError(current => (current?.id === id ? null : current))
+    }
+  }
   const jobs = q.data?.jobs ?? []
   const finished = jobs.filter(job => !jobActive(job))
   return <section className="lv-queue" aria-label={t("制作任务")}>
@@ -53,10 +67,10 @@ export function QueueSheet({ scope, clearScope, actions, run, open, refreshKey, 
       const rows = jobs.filter(job => job.state === id)
       if (!rows.length) return null
       return <section className="lv-queue-group" key={id}><h3>{t(label)} <small>{rows.length}</small></h3>
-        {rows.map(job => <JobRow key={job.id} job={job} pending={actions.get(job.id)} run={run} open={open}/>)}</section>
+        {rows.map(job => <JobRow key={job.id} job={job} pending={actions.get(job.id)} error={rowError?.id === job.id ? rowError.message : null} run={handleRun} open={open}/>)}</section>
     })}
     {finished.length > 0 && <details className="lv-queue-group lv-queue-finished"><summary>{t("最近完成") + " "}<small>{finished.length}</small></summary>
-      {finished.map(job => <JobRow key={job.id} job={job} pending={actions.get(job.id)} run={run} open={open}/>)}</details>}
+      {finished.map(job => <JobRow key={job.id} job={job} pending={actions.get(job.id)} error={rowError?.id === job.id ? rowError.message : null} run={handleRun} open={open}/>)}</details>}
     {q.page && <div className="lv-heading lv-page-nav"><button type="button" disabled={!q.page.previous} onClick={q.page.previous}>{t("上一页")}</button>
       <small>{q.page.index} / {q.page.count}</small>
       <button type="button" disabled={!q.page.next} onClick={q.page.next}>{t("下一页")}</button></div>}

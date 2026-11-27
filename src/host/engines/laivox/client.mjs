@@ -9,6 +9,8 @@ import { laneTarget, noteBusy, noteConcurrency, onLanesChange, pollHint } from '
 const base = 'https://dsh.xiao-lai.cn/xs/dsh-tts/v1'
 // Where users get or replace their API key (shown in settings).
 export const KEY_PAGE = 'https://www.xiao-lai.cn/xs/login/keys/'
+// New accounts register and buy on one path. Existing accounts still open the key page.
+export const START_PAGE = 'https://www.xiao-lai.cn/xs/login/?purpose=start'
 // Where users buy or renew the read-aloud pack (the web page decides whether an order is allowed).
 export const PACK_PAGE = 'https://www.xiao-lai.cn/xs/login/pack/'
 const MAX_AUDIO_BYTES = 24 * 1024 * 1024
@@ -239,6 +241,12 @@ export function createGateway(key, { onAuthFailure, hints = {} } = {}) {
   return {
     status: signal => request('/status', signal),
     catalog: signal => request('/catalog', signal),
+    // A short code the pack page exchanges for a buy-only session. The code is not a key.
+    async handoff(signal) {
+      const data = await request('/web-handoff', signal, {})
+      if (typeof data?.code !== 'string' || !/^[0-9a-f]{64}$/u.test(data.code)) throw new Error('LAIVOX_REQUEST_FAILED')
+      return { code: data.code, expiresIn: Number(data.expires_in) > 0 ? Number(data.expires_in) : 600 }
+    },
     async voices(signal, { includeMine = false } = {}) { return (await request(includeMine ? '/voices?include=mine' : '/voices', signal)).voices },
     // A voice's reference sample (WAV bytes), served by the gateway.
     async preview(voiceId, signal) {

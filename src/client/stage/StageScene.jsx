@@ -28,7 +28,7 @@ export function StageScene({ w, player, immersive, setImmersive, navigate, liste
       <ProductionBar w={w}/>
     </ProseChrome>
     {chapter?.operation?.live && <ProductionLive key={chapter.operation.id} chapter={chapter} operation={chapter.operation} player={player}
-      collapsible={hasAudio} listenFrom={listenFrom} packPage={w.keyInfo?.packPage}
+      collapsible={hasAudio} listenFrom={listenFrom} packPage={w.packLink || w.keyInfo?.packPage} onPreparePack={() => void w.preparePackLink?.()}
       onOpenDay={() => void w.openUsageDayAction()} onOpenSettings={() => w.setPanel('production')} onOpenRoles={() => w.setPanel('roles')}/>}
     {!chapter ? <EmptyStage w={w} create={create} openImport={openImport} books={books} openBook={openBook} openLibrary={openLibrary}/> : !chapter.media?.length ? <>
       <EmptyStage w={w} create={create} openImport={openImport}/>

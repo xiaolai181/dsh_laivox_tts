@@ -1202,6 +1202,9 @@
   "使用当前 Key 的 LaiVox 朗读额度 · 约 {v1} 字": "Uses the LaiVox read-aloud allowance of the current key · about {v1} characters",
   "续费朗读时长包 ↗": "Renew read-aloud pack ↗",
   "购买朗读时长包 ↗": "Buy read-aloud pack ↗",
+  "注册并购买（新用户）↗": "Register and buy (new) ↗",
+  "已有账号，获取 Key ↗": "I have an account — get a key ↗",
+  "查看时长包 ↗": "View read-aloud pack ↗",
   "LaiVox 朗读可以单独购买时长包，也可以使用 LaiVox 会员在官网签发的 API Key。": "For LaiVox read-aloud you can buy a separate read-aloud pack, or use an API key a LaiVox member issued on the website.",
   "选定 LaiVox 后，可为角色使用自己的音色。": "With LaiVox, characters can use your own voices.",
   "当前为 LaiVox。": "This is LaiVox.",
@@ -1454,5 +1457,12 @@
   "保存并重做本句": "Save and remake this line",
   "使用": "Use",
   "角色已在别处修改，已载入最新内容，请再保存一次。": "The role was changed elsewhere. The latest version is loaded; save once more.",
-  "重试会先确认上一次提交的结果；之后改动的内容要在确认后再保存一次。": "Retrying first confirms the earlier save. Changes made since then need another save afterwards."
+  "重试会先确认上一次提交的结果；之后改动的内容要在确认后再保存一次。": "Retrying first confirms the earlier save. Changes made since then need another save afterwards.",
+  "这本书正在导出，请等导出完成或取消后再删除。": "This book is being exported. Wait for the export to finish or cancel it before deleting.",
+  "编码已切换，请重新确认要跳过的章节。": "Encoding changed. Please confirm which chapters to skip.",
+  "部分章节范围已变动，请确认待导入列表。": "Some chapter boundaries changed. Please confirm the chapters to import.",
+  "LaiVox Key 已失效": "LaiVox Key expired or invalid",
+  "Key 已失效": "Key invalid",
+  "已保存": "Saved",
+  "正在读取模型…": "Loading models…"
 }

@@ -489,8 +489,12 @@ export function createJobQueue({ library, editorial, llm, gatewayFor, errorCode,
         try {
         const { used, limit } = await library.space()
         scoped.throwIfAborted()
-        const estimate = engine === 'laivox' && !part.taskId ? LAIVOX_BYTES_PER_CHAR * [...(part.text ?? '')].length : 0
-        if ((estimate ? used + estimate > limit : used >= limit)) throw new Error('AUDIO_LIMIT')
+        const prior = part.retake ? await library.audioInfo(chapter.id, part.key) : null
+        scoped.throwIfAborted()
+        if (!(part.retake && prior?.bytes > 0)) {
+          const estimate = engine === 'laivox' && !part.taskId ? LAIVOX_BYTES_PER_CHAR * [...(part.text ?? '')].length : 0
+          if ((estimate ? used + estimate > limit : used >= limit)) throw new Error('AUDIO_LIMIT')
+        }
         try {
           pcm = await synthesize(engine, part, gateway?.client, saveFor(part), scoped)
         } catch (caught) {
@@ -699,7 +703,7 @@ export function createJobQueue({ library, editorial, llm, gatewayFor, errorCode,
     let failure
     for (let attempt = 0; attempt < 3; attempt++) {
       try {
-        await library.checkpoint(job.id, state, job.progress)
+        await library.checkpoint(job.id, state, job.progress, { retake: job.spec?.retake === true })
         return state
       } catch (error) {
         failure = error

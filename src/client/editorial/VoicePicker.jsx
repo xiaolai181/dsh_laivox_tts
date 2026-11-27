@@ -53,14 +53,12 @@ export function VoicePicker({ engine, directory, voice, choose, close, player, n
     return () => abort.abort()
   }, [book, draftOnly])
   const run = useRef(0)
-  function owns(key) { return String(key ?? '').startsWith('voice:' + engine + ':') }
   function stop(update = true) {
     run.current++
-    const channel = previewChannel()
-    if (owns(channel?.currentKey())) channel.stop()
+    previewChannel()?.cancelPrefix('voice:' + engine + ':')
     if (update) setPlaying(null)
   }
-  useEffect(() => () => { run.current++; const channel = previewChannel(); if (owns(channel?.currentKey())) channel.stop() }, [engine])
+  useEffect(() => () => { run.current++; previewChannel()?.cancelPrefix('voice:' + engine + ':') }, [engine])
 
   async function play(id) {
     const channel = previewChannel()
@@ -131,7 +129,7 @@ export function VoicePicker({ engine, directory, voice, choose, close, player, n
       </select></label>}</div>
       <label className="lv-choice lv-voice-auto"><input type="radio" name="lv-voice" checked={!selection} onChange={() => { stop(); setSelection('') }}/><span>{laivoxNarrator ? (automaticName ? t('使用默认旁白（本章当前：{name}）', { name: automaticName }) : t('使用默认旁白')) : (automaticName ? t('自动分配（本章当前：{name}）', { name: automaticName }) : t('自动分配'))}</span></label>
       {voices === null && !directoryError && <p role="status">{t("正在读取音色…")}</p>}
-      {directoryError && <p role="alert" className="lv-error">{directoryError} <button onClick={reload}>{t("重新加载")}</button></p>}
+      {directoryError && <p role="alert" className="lv-error">{displayText(directoryError)} <button type="button" onClick={reload}>{t("重新加载")}</button></p>}
       {problem && <p role="alert" className="lv-error">{displayText(problem)}</p>}
       {voices && filtered.length === 0 && !grouped && <p className="lv-muted">{t("没有符合筛选条件的音色。")}</p>}
       {recommended.length > 0 && <section aria-label={t('推荐旁白音色')} className="lv-narrator-recommendations">

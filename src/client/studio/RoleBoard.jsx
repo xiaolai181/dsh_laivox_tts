@@ -18,12 +18,18 @@ const describe = role => [role.gender === 'female' ? t('女') : role.gender === 
 // Edge voices only stand in for each other within one language prefix.
 const family = (engine, id) => engine === 'edge' ? String(id).split('-').slice(0, 2).join('-') : ''
 
-export function RoleBoard({ roles, chapter, scriptDraft, roleDraft, conflicts, edit, saveVoice, saveProfile, upgradeRule, decide, resolve, discard, options, player, notify, busy, requestNew, keyInfo, shownEngine, openSettings, narratorSetting, openScript, onCreated, onBlankCreate }) {
+export function RoleBoard({ roles, chapter, scriptDraft, roleDraft, conflicts, edit, saveVoice, saveProfile, upgradeRule, decide, resolve, discard, options, player, notify, busy, requestNew, onConsumeNewRole, onCancelNewRole, keyInfo, shownEngine, openSettings, narratorSetting, openScript, onCreated, onBlankCreate }) {
   const blankForm = () => ({ id: crypto.randomUUID(), create: true, name: '', gender: '', age: '' })
   const [form, setForm] = useState(null)
   const [formProblem, setFormProblem] = useState('')
   const [formPending, setFormPending] = useState(false)
-  useEffect(() => { if (requestNew) { setFormProblem(''); setForm(blankForm()) } }, [requestNew])
+  useEffect(() => {
+    if (requestNew && requestNew.chapterId === chapter.id) {
+      setFormProblem('')
+      setForm(blankForm())
+      onConsumeNewRole?.()
+    }
+  }, [requestNew, chapter.id])
   const [picking, setPicking] = useState(null)
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(0)
@@ -140,13 +146,13 @@ export function RoleBoard({ roles, chapter, scriptDraft, roleDraft, conflicts, e
     ? Boolean(form.name || form.gender || form.age)
     : ['name', 'gender', 'age'].some(field => form[field] !== (form.original?.[field] ?? '')))
   function closeForm() {
-    if (!formDirty) { setForm(null); setFormProblem(''); setFormPending(false); return }
+    if (!formDirty) { setForm(null); setFormProblem(''); setFormPending(false); onCancelNewRole?.(); return }
     void decide({
       title: deferText(() => t('放弃这次修改？')),
       text: deferText(() => t('这次填写的内容会丢失。')),
       choices: [['discard', deferText(() => t('放弃修改'))], [null, deferText(() => t('继续编辑'))]],
       destructive: true,
-    }).then(choice => { if (choice === 'discard') { setForm(null); setFormProblem(''); setFormPending(false) } })
+    }).then(choice => { if (choice === 'discard') { setForm(null); setFormProblem(''); setFormPending(false); onCancelNewRole?.() } })
   }
   function openEditor(role) {
     setFormProblem('')

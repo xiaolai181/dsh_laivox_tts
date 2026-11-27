@@ -9,6 +9,7 @@ import { detectNoiseLines, NOISE_SUGGEST_MIN } from '../../domain/noise.mjs'
 import { ACTIVE, MODE_NAMES } from './production.mjs'
 import { productionView } from '../workbench/productionView.mjs'
 import { openUsageDay } from '../workbench/laivox.mjs'
+import { notePackOpened } from '../workbench/packLink.mjs'
 
 export { MODE_NAMES }
 
@@ -51,7 +52,7 @@ function LaivoxPauseActions({ w, pause, opened, fill, retry }) {
       : pause.kind === 'voice' ? <button type="button" className="lv-primary" onClick={() => w.setPanel('roles')}>{t("打开角色")}</button>
         // A pack key whose hours ran out or lapsed can buy more on the web page.
         : (pause.kind === 'quota' || pause.kind === 'membership') && pause.ledger === 'pack' && w.keyInfo?.packPage
-          ? <a className="lv-primary" href={w.keyInfo.packPage} target="_blank" rel="noopener noreferrer">{t('购买朗读时长包 ↗')}</a> : null
+          ? <a className="lv-primary" href={w.packLink || w.keyInfo.packPage} target="_blank" rel="noopener noreferrer" onPointerEnter={() => void w.preparePackLink?.()} onFocus={() => void w.preparePackLink?.()} onClick={() => notePackOpened()}>{t('购买朗读时长包 ↗')}</a> : null
   // The other ledger is usable: the key can be switched to it on the web page instead of buying more.
   const ledgerPause = pause.kind === 'quota' || pause.kind === 'membership'
   const switchHint = !ledgerPause ? ''
@@ -85,6 +86,7 @@ export function ProductionBar({ w, compact = false, openQueue }) {
   // The production sheet below already shows running progress in detail.
   const showStatus = active && !(job.live && job.state !== 'paused')
   const [cleanOnce, setCleanOnce] = useState(false)
+  useEffect(() => { setCleanOnce(false) }, [chapter?.id])
   const [dayOpenedFor, setDayOpenedFor] = useState(null)
   useEffect(() => {
     if (job?.state !== 'paused' && dayOpenedFor) setDayOpenedFor(null)

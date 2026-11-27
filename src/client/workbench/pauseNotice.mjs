@@ -21,7 +21,7 @@ export function pauseActionSpec(pause, packPage) {
   return null
 }
 
-export function pauseNoticeFor(job, { explain, packPage, currentChapterId, openDay, openSettings, openRoles, openQueue } = {}) {
+export function pauseNoticeFor(job, { explain, packPage, currentChapterId, openDay, openSettings, openRoles, openQueue, onPreparePack } = {}) {
   const spec = pauseActionSpec(job?.laivoxPause, packPage)
   const otherChapter = Boolean(currentChapterId && job?.chapter && job.chapter !== currentChapterId)
   const text = deferText(() => {
@@ -32,7 +32,7 @@ export function pauseNoticeFor(job, { explain, packPage, currentChapterId, openD
   if (spec?.type === 'openDay' && openDay) action = { label: deferText(() => t(spec.label)), run: openDay }
   else if (spec?.type === 'settings' && openSettings) action = { label: deferText(() => t(spec.label)), run: openSettings }
   else if (spec?.type === 'roles' && openRoles) action = { label: deferText(() => t(spec.label)), run: openRoles }
-  else if (spec?.type === 'link') action = { label: deferText(() => t(spec.label)), href: spec.href }
+  else if (spec?.type === 'link') action = { label: deferText(() => t(spec.label)), href: spec.href, packLink: true, ...(onPreparePack ? { onPrepare: onPreparePack } : {}) }
   else if (otherChapter && openQueue) action = { label: deferText(() => t('查看任务')), run: openQueue }
   return { text, ...(action ?? {}), dismissible: true, durationMs: 12_000 }
 }

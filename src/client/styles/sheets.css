@@ -5,6 +5,7 @@
 .lv-sheet-body {flex:1;min-height:0;overflow:auto;padding:20px 24px 28px;display:flex;flex-direction:column;gap:22px;}
 .lv-sheet .lv-card {border:0;border-bottom:1px solid var(--lv-line);border-radius:0;box-shadow:none;padding:18px 0;background:transparent;}
 .lv-ui .lv-sheet-plan {z-index:21;}
+.lv-ui .lv-sheet-suspended {visibility:hidden;pointer-events:none;z-index:19;}
 @container (max-width:759px) {.lv-ui .lv-sheet {width:100%;border-left:0;}}
 @keyframes lv-sheet-in {from {opacity:0;transform:translateX(16px);} to {opacity:1;transform:none;}}
 @media (prefers-reduced-motion:reduce) {.lv-ui .lv-sheet {animation:none;}}

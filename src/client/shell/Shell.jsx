@@ -289,10 +289,21 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
   const railBook = !chapter?.isSnippet && (chapter ? { id: chapter.book, title: chapter.bookTitle } : w.appendBook)
   const rail = <ChapterRail chapter={chapter} chapters={railChapters} query={chapterQuery} changeQuery={setChapterQuery}
     navigate={id=>nav({chapter:id})} create={railBook ? () => nav({ new: true, book: railBook.id, bookTitle: railBook.title }) : null}/>
+  useEffect(() => {
+    function onWindowKeyDown(event) {
+      if (event.key !== 'Escape' || event.defaultPrevented || event.target?.closest?.('dialog,[popover],.lv-sheet') || document.querySelector('dialog[open]')) return
+      if (!scene.sheet && w.dialog?.kind !== 'plan') return
+      event.preventDefault()
+      if (scene.sheet) closePanel()
+      else w.answer(null)
+    }
+    window.addEventListener('keydown', onWindowKeyDown)
+    return () => window.removeEventListener('keydown', onWindowKeyDown)
+  }, [scene.sheet, w.dialog?.kind])
   function keyDown(event) {
     if(event.defaultPrevented || event.target.closest('dialog,[popover],.lv-sheet'))return
     // Esc closes the open side panel even when focus has moved to the dock.
-    if(event.key==='Escape' && (scene.sheet || w.dialog?.kind==='plan')){event.preventDefault();if(w.dialog?.kind==='plan')w.answer(null);else closePanel();return}
+    if(event.key==='Escape' && (scene.sheet || w.dialog?.kind==='plan')){event.preventDefault();if(scene.sheet)closePanel();else w.answer(null);return}
     if(event.key==='Escape' && onShelf && viewShelfMode==='detail' && !event.target.closest('input,textarea,select')){event.preventDefault();exitShelfDetail();return}
     if(event.target.closest('button,a,[role=tab],[role=listbox]'))return
     const action=shortcutAction(event)
@@ -337,10 +348,10 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
     {shelfOpen && width<1024 && <Overlay title={t("目录")} variant="shelf" close={()=>setShelfOpen(false)} {...appearance}>{rail}<button onClick={()=>{setShelfOpen(false);chooseScene('library')}}>{t("打开书架")}</button></Overlay>}
     {scene.sheet==='queue' && <Sheet title={t("任务")} close={closePanel}>
       <QueueSheet scope={w.queueScope} clearScope={()=>w.setQueueScope(null)} actions={w.actions} refreshKey={activity} decide={w.decide} notify={notify}
-        run={async(id,action)=>{await w.jobAction(id,action);bumpActivity(n=>n+1)}} close={closePanel} open={(chapter,job)=>nav({chapter,job})} openStorage={()=>scene.openSheet('settings','storage')}/>
+        run={async(id,action)=>{const result=await w.jobAction(id,action);bumpActivity(n=>n+1);return result}} close={closePanel} open={(chapter,job)=>nav({chapter,job})} openStorage={()=>scene.openSheet('settings','storage')}/>
     </Sheet>}
     {scene.sheet==='settings' && <Sheet title={t("设置")} close={closePanel}>{w.error && <p role="alert">{w.error}</p>}<SettingsSheet focus={scene.focus} w={w} space={books.value?.space} player={player}/></Sheet>}
-    {w.dialog?.kind==='plan' && <Sheet key="plan" title={t("制作单")} className="lv-sheet-plan" close={()=>w.answer(null)}><PlanSheet dialog={w.dialog} answer={w.answer} narratorSetting={w.settings.values.laivoxNarratorDefault} account={w.keyInfo?.account}/></Sheet>}
+    {w.dialog?.kind==='plan' && <Sheet key="plan" title={t("制作单")} className="lv-sheet-plan" suspended={Boolean(scene.sheet)} close={()=>w.answer(null)}><PlanSheet dialog={w.dialog} answer={w.answer} narratorSetting={w.settings.values.laivoxNarratorDefault} account={w.keyInfo?.account}/></Sheet>}
     {w.dialog && w.dialog.kind!=='plan' && <Decision dialog={w.dialog} answer={w.answer} {...appearance}/>}
   </main>
 }

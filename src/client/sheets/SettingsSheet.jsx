@@ -7,6 +7,7 @@ import { ModelOptions } from '../editorial/ModelOptions.jsx'
 import { MODE_NAMES } from '../stage/ProductionBar.jsx'
 import { engineSettingNote } from '../workbench/enginePitch.mjs'
 import { deniedLine, ledgerLine, openUsageDay, packPriceLine, shortDate, usageBreakdown, usageLine } from '../workbench/laivox.mjs'
+import { ensurePackLink, notePackOpened, usePackLink } from '../workbench/packLink.mjs'
 import { previewChannel } from '../player/previewChannel.mjs'
 import { ActivityMark, LevelBar, StorageUsage } from '../components/Metrics.jsx'
 import { Icon } from '../components/Icon.jsx'
@@ -66,19 +67,20 @@ function Speech({ values, save }) {
   const { voices, problem, reload } = useVoiceDirectory('edge')
   const [preview, setPreview] = useState({ id: null, error: '' })
   const run = useRef(0)
-  useEffect(() => () => { run.current++ }, [])
+  useEffect(() => () => { run.current++; previewChannel()?.cancelPrefix('speech:') }, [])
   async function listen(id) {
     const channel = previewChannel()
     if (!channel) return
     if (preview.id === id) {
-      if (String(channel.currentKey() ?? '').startsWith('speech:')) channel.stop()
+      run.current++
+      channel.cancelPrefix('speech:')
       setPreview({ id: null, error: '' })
       return
     }
     const mine = ++run.current
     setPreview({ id, error: '' })
     try {
-      await channel.play('speech:' + id, [signal => getAudio('edge', id, signal)])
+      await channel.play('speech:' + id, [signal => getAudio('edge', id, signal)], { restorePlayback: true })
       if (mine === run.current) setPreview({ id: null, error: '' })
     } catch (error) {
       if (mine === run.current) setPreview({ id: null, error: deferText(() => explain(error)) })
@@ -301,7 +303,9 @@ const EXTERNAL_KEY_SOURCES = new Set(['env', 'project-env', 'user-env'])
 
 // LaiVox account card: shown once LaiVox is chosen, a key was saved, or the
 // user opens the collapsed LaiVox intro. It talks to LaiVox only while mounted.
-function LaivoxCard({ keyInfo, reloadKey, decide, values, save, embedded = false }) {
+const INVALID_KEY_CODES = new Set(['LAIVOX_KEY_REQUIRED', 'LAIVOX_KEY_INVALID', 'LAIVOX_ACCOUNT_CHANGED', 'LAIVOX_KEY_SUSPENDED', 'ACCOUNT_DISABLED'])
+
+function LaivoxCard({ keyInfo, packHref, packRequest, packIdentity, reloadKey, decide, values, save, embedded = false }) {
   const [secret, setSecret] = useState('')
   const [saving, setSaving] = useState(false)
   const [clearing, setClearing] = useState(false)
@@ -311,6 +315,12 @@ function LaivoxCard({ keyInfo, reloadKey, decide, values, save, embedded = false
   const [loading, setLoading] = useState(false)
   const [opening, setOpening] = useState(false)
   const statusRequest = useRef(null)
+  const loadRef = useRef(null)
+  useEffect(() => {
+    const onRefresh = () => { void loadRef.current?.(true) }
+    window.addEventListener('lv-laivox-refresh', onRefresh)
+    return () => window.removeEventListener('lv-laivox-refresh', onRefresh)
+  }, [])
   const configured = keyInfo?.configured === true
   const current = reading?.key === keyInfo ? reading : null
   const status = current?.status
@@ -349,15 +359,17 @@ function LaivoxCard({ keyInfo, reloadKey, decide, values, save, embedded = false
       }
     } catch (error) {
       if (!request.signal.aborted) {
-        const invalid = ['LAIVOX_KEY_REQUIRED', 'LAIVOX_KEY_INVALID', 'LAIVOX_ACCOUNT_CHANGED', 'LAIVOX_KEY_SUSPENDED', 'ACCOUNT_DISABLED'].includes(error.message)
+        const errorCode = error?.message ?? ''
+        const invalid = INVALID_KEY_CODES.has(errorCode)
         setReading(previous => ({
-          ...(invalid ? {} : previous), key: keyInfo, error: deferText(() => explain(error)),
+          ...(invalid ? {} : previous), key: keyInfo, errorCode, error: deferText(() => explain(error)),
         }))
       }
     } finally {
       if (!request.signal.aborted) setLoading(false)
     }
   }
+  loadRef.current = load
   useEffect(() => {
     void load()
     return () => statusRequest.current?.abort()
@@ -408,8 +420,15 @@ function LaivoxCard({ keyInfo, reloadKey, decide, values, save, embedded = false
   const denied = status && status.synthesisAllowed === false
   // Sale paused when the gateway switched the pack feature off: no purchase link.
   const packOnSale = status?.features?.pack !== false
-  const packLink = keyInfo?.packPage && packOnSale
-    ? <a href={keyInfo.packPage} target="_blank" rel="noopener noreferrer">{status?.ledger === 'pack' && status?.pack?.active ? t('续费朗读时长包 ↗') : t('购买朗读时长包 ↗')}</a>
+  const packReady = Boolean(status) && status.features?.pack !== false
+  const cardPackHref = usePackLink(keyInfo?.packPage, Boolean(configured && packReady && keyInfo?.packPage), packRequest, packIdentity)
+  const packTarget = cardPackHref || packHref || keyInfo?.packPage
+  const preparePack = () => {
+    if (configured && packReady && packIdentity && typeof packRequest === 'function') void ensurePackLink(packRequest, packIdentity)
+  }
+  const packLabel = !status?.pack?.active ? '购买朗读时长包 ↗' : status.pack.renewAllowed ? '续费朗读时长包 ↗' : '查看时长包 ↗'
+  const packLink = packTarget && packOnSale
+    ? <a href={packTarget} target="_blank" rel="noopener noreferrer" onPointerEnter={preparePack} onFocus={preparePack} onClick={() => notePackOpened()}>{t(packLabel)}</a>
     : null
   const canOpen = Boolean(!current?.error && usage?.usedUp && usage?.canAuthorize)
   const accountId = status?.account ?? keyInfo?.account
@@ -421,10 +440,12 @@ function LaivoxCard({ keyInfo, reloadKey, decide, values, save, embedded = false
   const updatingKey = saving || clearing
   const measured = !denied && usage && !usage.unlimited && ['active', 'provisional'].includes(usage.state) && Number.isFinite(usage.remainingPct)
   const breakdown = !denied && usage ? usageBreakdown(usage) : ''
+  const keyInvalid = Boolean(current?.errorCode && INVALID_KEY_CODES.has(current.errorCode))
+  const statusUnavailable = Boolean(current?.error && !keyInvalid && !status)
   return <form className={embedded ? 'lv-laivox-settings lv-laivox-embedded' : 'lv-card lv-laivox-settings'} onSubmit={saveKey}>
-    {!embedded && <h3 id="lv-laivox">{configured ? t('LaiVox 已连接') : t('连接 LaiVox（推荐 · 增值付费）')}</h3>}
+    {!embedded && <h3 id="lv-laivox">{!configured ? t('连接 LaiVox（推荐 · 增值付费）') : keyInvalid ? t('LaiVox Key 已失效') : t('LaiVox 已连接')}</h3>}
     {configured && <div className="lv-laivox-account" role="status">
-      <small>{t('已连接')}{masked ? '（' + masked + '）' : ''}</small>
+      <small>{keyInvalid ? t('Key 已失效') : statusUnavailable ? t('已保存') : t('已连接')}{masked ? '（' + masked + '）' : ''}</small>
       {expiry && <small>{expiry}</small>}
     </div>}
     {!configured && <small>{t("LaiVox 为增值付费引擎：可使用单独购买的朗读时长包，或 LaiVox 会员在官网签发的 API Key。")}</small>}
@@ -473,7 +494,8 @@ function LaivoxCard({ keyInfo, reloadKey, decide, values, save, embedded = false
       <div className="lv-inline">
         <button className="lv-primary" disabled={!secret.trim() || saving || clearing}>{saving ? t('正在验证…') : t('验证并保存')}</button>
       </div>
-      {keyInfo?.keyPage && <a href={keyInfo.keyPage} target="_blank" rel="noopener noreferrer">{t("获取或更换 API Key ↗")}</a>}
+      {keyInfo?.startPage && <a href={keyInfo.startPage} target="_blank" rel="noopener noreferrer">{t('注册并购买（新用户）↗')}</a>}
+      {keyInfo?.keyPage && <a href={keyInfo.keyPage} target="_blank" rel="noopener noreferrer">{t('已有账号，获取 Key ↗')}</a>}
       {packLink}
     </>}
     {message && <small role={failed ? 'alert' : 'status'}>{displayText(message)}</small>}
@@ -482,16 +504,16 @@ function LaivoxCard({ keyInfo, reloadKey, decide, values, save, embedded = false
 
 // Keeps zero requests to LaiVox when Edge is selected and no key is configured,
 // while still giving users a visible entry to learn about and connect LaiVox.
-function LaivoxCardGate({ active, focus, keyInfo, reloadKey, decide, values, save }) {
+function LaivoxCardGate({ active, focus, keyInfo, packHref, packRequest, packIdentity, reloadKey, decide, values, save }) {
   const [expanded, setExpanded] = useState(focus === 'laivox')
   useEffect(() => { if (focus === 'laivox') setExpanded(true) }, [focus])
-  if (active) return <LaivoxCard keyInfo={keyInfo} reloadKey={reloadKey} decide={decide} values={values} save={save}/>
+  if (active) return <LaivoxCard keyInfo={keyInfo} packHref={packHref} packRequest={packRequest} packIdentity={packIdentity} reloadKey={reloadKey} decide={decide} values={values} save={save}/>
   return <section className="lv-card lv-laivox-fold">
     <h3 id="lv-laivox">{t('LaiVox 引擎')} <span className="lv-badge-rec">{t('推荐 · 增值付费')}</span></h3>
     <small>{t('拟人情感演绎，支持多角色逐句语气与自有音色。属增值付费功能，使用会员朗读额度或单独购买的朗读时长包。')}</small>
     <details open={expanded} onToggle={event => setExpanded(event.currentTarget.open)}>
       <summary>{t('配置 API Key 或查看时长包说明')}</summary>
-      {expanded && <LaivoxCard embedded keyInfo={keyInfo} reloadKey={reloadKey} decide={decide} values={values} save={save}/>}
+      {expanded && <LaivoxCard embedded keyInfo={keyInfo} packHref={packHref} packRequest={packRequest} packIdentity={packIdentity} reloadKey={reloadKey} decide={decide} values={values} save={save}/>}
     </details>
   </section>
 }
@@ -508,7 +530,7 @@ export function SettingsSheet({ w, space, focus, player }) {
   const laivoxActive = w.options.engine === 'laivox' || Boolean(w.keyInfo?.configured)
   return <div ref={root} className="lv-panel-content">
     <Production options={w.options} choose={w.chooseOptions} models={w.models} reloadModels={w.reloadModels} busy={w.busy}/>
-    <LaivoxCardGate active={laivoxActive} focus={focus} keyInfo={w.keyInfo} reloadKey={w.reloadKey} decide={w.decide} values={values} save={w.saveSetting}/>
+    <LaivoxCardGate active={laivoxActive} focus={focus} keyInfo={w.keyInfo} packHref={w.packLink} packRequest={w.packRequest} packIdentity={w.packIdentity} reloadKey={w.reloadKey} decide={w.decide} values={values} save={w.saveSetting}/>
     <Listening values={values} save={w.saveSetting}/>
     <Speech values={values} save={w.saveSetting} player={player}/>
     <Conversation values={values} save={w.saveSetting}/>

@@ -8,9 +8,10 @@ import { AiUsage } from '../jobs/AiUsage.jsx'
 export const cutLabels = { structure: '目录结构', heading: '正文标题', spine: '章节文件', learned: '标题样式', suggested: '建议分章', manual: '手动分章', split: '超长拆分' }
 
 export function ChapterReview({ data, session, onUpdate, busy, setBusy, setReviewCanLeave, onError, focused, focus, close, decide }) {
-  const [models, setModels] = useState([])
+  const [models, setModels] = useState(undefined)
+  const [modelsTry, setModelsTry] = useState(0)
   const [selection, setSelection] = useState(null)
-  const selected = selection ?? models[0]
+  const selected = selection ?? models?.[0]
   const [progress, setProgress] = useState('')
   const [phase, setPhase] = useState(null)
   const [context, setContext] = useState(null)
@@ -25,10 +26,12 @@ export function ChapterReview({ data, session, onUpdate, busy, setBusy, setRevie
   useEffect(() => {
     const load = new AbortController()
     get('models', {}, load.signal).then(result => {
-      if (!load.signal.aborted) setModels(result)
-    }).catch(() => {})
+      if (!load.signal.aborted) setModels(Array.isArray(result) ? result : [])
+    }).catch(() => {
+      if (!load.signal.aborted) setModels(null)
+    })
     return () => load.abort()
-  }, [])
+  }, [modelsTry])
 
   useLayoutEffect(() => {
     latest.current = reviewKey
@@ -156,14 +159,15 @@ export function ChapterReview({ data, session, onUpdate, busy, setBusy, setRevie
 
   return <section className="lv-chapter-review" aria-label={t("章节识别")}>
     <div className="lv-inline">
-      {models.length > 0 && <ModelOptions models={models} selection={selected} onChange={setSelection} disabled={busy}/>}
-      <button disabled={busy || !models.length || capped} onClick={analyze}>{data.ai.requests > 0 ? t('继续复核') : t('AI 辅助分章')}</button>
+      {Array.isArray(models) && models.length > 0 && <ModelOptions models={models} selection={selected} onChange={setSelection} disabled={busy}/>}
+      {models === null && <><small role="alert" className="lv-error">{t('模型列表暂不可用。')}</small><button type="button" onClick={() => { setModels(undefined); setModelsTry(n => n + 1) }}>{t('重试')}</button></>}
+      <button disabled={busy || !models?.length || capped} onClick={analyze}>{data.ai.requests > 0 ? t('继续复核') : t('AI 辅助分章')}</button>
       {phase === 'reviewing' && <button onClick={() => owner.current?.request.abort()}>{t("停止复核")}</button>}
       {phase === 'refresh' && <button onClick={refreshReview}>{t('刷新复核预览')}</button>}
     </div>
     <small>
-      {models.length ? t('启用后，仅向所选模型发送候选标题和断点附近的摘录。') : t('配置 DSH 模型后可复核疑点。')}
-      {' '}{t('已使用 {used} / {budget} 字符 · {done} / {limit} 次请求。',
+      {models === undefined ? t('正在读取模型…') : models === null ? '' : models.length ? t('启用后，仅向所选模型发送候选标题和断点附近的摘录。') : t('配置 DSH 模型后可复核疑点。')}
+      {models !== null ? ' ' : ''}{t('已使用 {used} / {budget} 字符 · {done} / {limit} 次请求。',
         { used: data.ai.spent.toLocaleString(), budget: data.ai.budget.toLocaleString(), done: data.ai.requests, limit: data.ai.requestLimit })}</small>
     <div className="lv-review-meters">
       <LevelBar label={t('AI 检查字数上限')} value={data.ai.spent} max={data.ai.budget}/>
