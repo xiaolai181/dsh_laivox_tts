@@ -1,4 +1,5 @@
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { PLUGIN_ID } from '../domain/plugin.mjs'
 import { openLibrary } from './library/repository.mjs'
 import { migrateLegacy } from './library/migrate-v1.mjs'
@@ -17,6 +18,9 @@ import { createSpeechEngine } from './speech-engine.mjs'
 import { createSpeechService } from './speech.mjs'
 import { createDeliverableImports } from './deliverables.mjs'
 import { seedBuiltinSamples } from './samples.mjs'
+import { createUpdateChecker } from './version-check.mjs'
+
+const PKG_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 
 export const name = PLUGIN_ID
 // Only what the plugin cannot run without. Commands, tools and attachments are
@@ -31,6 +35,8 @@ function unavailableLibrary(error) {
 
 export async function start(ctx, { samplesDir } = {}) {
   const root = join(ctx.profileContext.dir, PLUGIN_ID)
+  const optional = name => () => (typeof ctx.get === 'function' ? ctx.get(name) : ctx[name])
+  const updateChecker = createUpdateChecker({ pkgRoot: PKG_ROOT, profileDir: ctx.profileContext.dir, pluginManager: optional('pluginManager') })
   let library
   try { library = await openLibrary(root) }
   catch (error) {
@@ -39,7 +45,7 @@ export async function start(ctx, { samplesDir } = {}) {
     registerAPI(ctx, { library: dead, jobs: dead, imports: dead, chat: { proposals: async () => [] },
       gatewayFor: async () => { throw error }, keyStatus: async () => { throw error }, setKey: async () => { throw error },
       clearKey: async () => { throw error }, migrationWarning: false, voicePreview: dead, mp3: dead, snippets: dead,
-      speech: dead, deliverables: dead })
+      speech: dead, deliverables: dead, updateChecker })
     ctx.logger?.warn('LaiVox library cannot open: ' + error.message)
     return
   }
@@ -78,11 +84,10 @@ export async function start(ctx, { samplesDir } = {}) {
   catch (error) { ctx.logger?.warn('LaiVox sample seed skipped: ' + (error?.message ?? error)) }
   // Delivered files: optional host services, looked up when used.
   // ctx.get for services not in `inject` (reading ctx[name] would warn); plain objects in tests.
-  const optional = name => () => (typeof ctx.get === 'function' ? ctx.get(name) : ctx[name])
   const deliverables = createDeliverableImports({ imports, services: { sessionQuery: optional('sessionQuery'), fs: optional('fs'),
     workspaceRoot: () => optional('sandboxPolicy')()?.workspaceRoot } })
   const chat = registerChat(ctx, { library, jobs, imports, errorCode, speech })
-  registerAPI(ctx, { library, jobs, imports, chat, gatewayFor, keyStatus, setKey, clearKey, migrationWarning, voicePreview, mp3, snippets, speech, deliverables })
+  registerAPI(ctx, { library, jobs, imports, chat, gatewayFor, keyStatus, setKey, clearKey, migrationWarning, voicePreview, mp3, snippets, speech, deliverables, updateChecker })
   // Expired conversation readings and old import drafts: once now, then hourly.
   void snippets.sweep()
   sweepTimer = setInterval(() => { void snippets.sweep() }, SWEEP_INTERVAL)

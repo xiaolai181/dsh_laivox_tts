@@ -5,13 +5,14 @@ import { roleColor } from './roleColor.mjs'
 import { positionAt } from './readingPosition.mjs'
 import { useMarks, useSmoothOffset } from '../player/useMarks.mjs'
 import { GapNotice } from './GapNotice.jsx'
+import { startExcerptDownload } from '../workbench/downloads.mjs'
 export const emotions = { neutral: '平静', happy: '喜悦', sad: '悲伤', angry: '愤怒', afraid: '害怕', tense: '紧张', gentle: '温柔' }
 
 function partText(chapter, part) {
   return part?.text ?? (chapter.playbackStale ? t('旧版音频') : chapter.text.slice(part?.start ?? 0, part?.end ?? 0))
 }
 
-export function ImmersiveLines({ chapter, player, listenFrom }) {
+export function ImmersiveLines({ chapter, player, listenFrom, notify, askAi }) {
   const s = useSyncExternalStore(player.subscribe, player.getSnapshot)
   const here = s.chapter === chapter.id
   const segments = here ? s.segments : chapter.media
@@ -29,8 +30,19 @@ export function ImmersiveLines({ chapter, player, listenFrom }) {
     const text = selected ? currentText : partText(chapter, line)
     const role = line.roleId === 'narrator' ? t('旁白') : chapter.roles.find(role => role.id === line.roleId)?.name ?? t('待改派')
     const [wordStart, wordEnd] = selected && position.word ? position.word : [position.read, position.read]
+    const excerptJob = chapter.playbackJob?.id ?? (here ? s.job : null)
+    const exportHighlight = () => {
+      if (!excerptJob || !line.ready) return
+      let to = n
+      let seconds = line.seconds || 0
+      while (to + 1 < segments.length && to - n < 2 && segments[to + 1]?.ready && seconds + (segments[to + 1].seconds || 0) <= 90) {
+        to++
+        seconds += segments[to].seconds || 0
+      }
+      void startExcerptDownload({ job: excerptJob, from: n, to, format: 'mp3', subtitles: 'srt', speakers: true, title: chapter.title, notify })
+    }
     return <div key={line.id ?? n} className={selected ? 'lv-current-line' : 'lv-context-line'} data-dialogue={line.roleId !== 'narrator'} style={{ '--lv-role-color': roleColor(line.roleId) }}>
-      {selected && <div className="lv-speaking"><i className="lv-role-dot"/><strong>{role}</strong><span>· {line.intensity === 2 ? t('强烈 · ') : ''}{t(emotions[line.emotion] ?? '平静')}</span>{line.instruct && <span>· {deliveryLabel(line.instruct)}</span>}{chapter.playbackJob?.engine === 'laivox' && <small>LaiVox</small>}</div>}
+      {selected && <div className="lv-speaking"><i className="lv-role-dot"/><strong>{role}</strong><span>· {line.intensity === 2 ? t('强烈 · ') : ''}{t(emotions[line.emotion] ?? '平静')}</span>{line.instruct && <span>· {deliveryLabel(line.instruct)}</span>}{chapter.playbackJob?.engine === 'laivox' && <small>LaiVox</small>}{line.ready && excerptJob && <button type="button" className="lv-link" onClick={exportHighlight}>{t("导出高光片段")}</button>}{askAi && text && <button type="button" className="lv-link" onClick={() => askAi({ bookTitle: chapter.bookTitle, ordinal: chapter.ordinal, chapterTitle: chapter.title, speaker: role, quote: text.slice(0, 400) })}>{t("问 AI 这一段")}</button>}</div>}
       <button className="lv-line-button" onClick={() => listenFrom?.(line.start)}>
         {selected ? <>
           <span className="lv-read">{text.slice(0, wordStart)}</span>

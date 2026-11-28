@@ -156,8 +156,9 @@ export function createImportService(library, root, llm, options = {}) {
     },
     stage: (name, stream, session = null, signal) => exclusive(async () => {
       const linked = importSignal(signal)
-      const format = extname(name).slice(1).toLowerCase()
-      if (format !== 'epub' && format !== 'txt' && format !== 'pdf') throw new Error('IMPORT_TYPE_INVALID')
+      const ext = extname(name).slice(1).toLowerCase()
+      const format = ext === 'markdown' ? 'md' : ext === 'htm' ? 'html' : ext
+      if (!['epub', 'txt', 'pdf', 'md', 'html', 'docx'].includes(format)) throw new Error('IMPORT_TYPE_INVALID')
       const filename = basename(name.replaceAll('\\','/'))
       const title = basename(filename, extname(filename)).trim().slice(0, 180) || '未命名小说'
       if ((await library.imports(session)).length >= 20) throw new Error('IMPORT_PREVIEW_LIMIT')
@@ -181,21 +182,29 @@ export function createImportService(library, root, llm, options = {}) {
         }
         linked.throwIfAborted()
         await library.saveImport(id, session, draft)
-        return summary(id, draft, review)
+        const view = summary(id, draft, review)
+        const resolved = resolveLayout(draft, review)
+        const matchedBook = await library.findRelatedBook({
+          fingerprint: draft.fingerprint,
+          title: draft.title,
+          chapters: resolved.chapters.map(({ title: chTitle, text: chText }) => ({ title: chTitle, text: chText })),
+        })
+        return { ...view, matchedBook }
       } catch (error) {
         if (format === 'txt') await rm(rawPath(id), { force: true }).catch(() => {})
         throw error
       }
     }),
     // Where an import stands, for the cards that offered it: still a
-    // draft, published (the book keeps the import's id), or gone.
+    // draft, published (the book keeps the import's id or append target), or gone.
     async state(id, session = null) {
       if (!idPattern.test(id)) throw new Error('IMPORT_NOT_FOUND')
       const row = await library.import(id)
       if (row && row.session === session) return { state: 'pending' }
-      if (await library.publishedImport(id, session)) {
-        const book = await library.shelfBook(id)
-        return book ? { state: 'published', book: id, title: book.title } : { state: 'gone' }
+      const published = await library.publishedImport(id, session)
+      if (published) {
+        const book = await library.shelfBook(published.book)
+        return book ? { state: 'published', book: book.id, title: book.title } : { state: 'gone' }
       }
       return { state: 'gone' }
     },
@@ -218,7 +227,14 @@ export function createImportService(library, root, llm, options = {}) {
         signal?.throwIfAborted()
         if (reviewFor(id, session)) throw new Error('IMPORT_RUNNING')
       }
-      return summary(id, data, review)
+      const view = summary(id, data, review)
+      const resolved = resolveLayout(data, review)
+      const matchedBook = await library.findRelatedBook({
+        fingerprint: data.fingerprint,
+        title: data.title,
+        chapters: resolved.chapters.map(({ title: chTitle, text: chText }) => ({ title: chTitle, text: chText })),
+      })
+      return { ...view, matchedBook }
     },
     async context(id, session, offset) {
       const data = await find(id, session)
@@ -272,14 +288,18 @@ export function createImportService(library, root, llm, options = {}) {
       await library.saveImport(id, session, draft)
       return summary(id, draft, await library.importReview(draft.layout.source))
     }),
-    publish: (id, session, selection, duplicate, revision) => exclusive(async () => {
-      if (await library.publishedImport(id, session)) return { id }
+    publish: (id, session, selection, duplicate, revision, appendToBook) => exclusive(async () => {
+      const published = await library.publishedImport(id, session)
+      if (published) return { id: published.book }
       const data = await find(id, session)
       const resolved = validate(resolveLayout(data, await library.importReview(data.layout.source)))
       if (revision !== undefined && revision !== resolved.revision) throw new Error('VERSION_CONFLICT')
       const ordinals = selection ?? resolved.chapters.map((_, index) => index)
       if (!Array.isArray(ordinals) || !ordinals.length || ordinals.some(index => !Number.isInteger(index) || !resolved.chapters[index])) throw new Error('INVALID_INPUT')
-      const result = await library.publishImport(id, session, { ...data, chapters: resolved.chapters }, [...new Set(ordinals)].sort((a,b) => a - b), duplicate === true)
+      const uniqueOrdinals = [...new Set(ordinals)].sort((a, b) => a - b)
+      const result = appendToBook
+        ? await library.mergeBookChapters({ id, session, targetBook: appendToBook, chapters: uniqueOrdinals.map(i => resolved.chapters[i]) })
+        : await library.publishImport(id, session, { ...data, chapters: resolved.chapters }, uniqueOrdinals, duplicate === true)
       if (result.id && data.format === 'txt') await rm(rawPath(id), { force: true }).catch(() => {})
       return result
     }),

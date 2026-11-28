@@ -9,6 +9,7 @@ import { INSTRUCT_PRESETS, presetIntensity } from '../../domain/voice-direction.
 import { roleColor } from '../stage/roleColor.mjs'
 import { groupSpeech, segmentChapter, segmentVersion } from '../../domain/segment.mjs'
 import { explain, get, post, url } from '../api.mjs'
+import { startExcerptDownload } from '../workbench/downloads.mjs'
 import { chapterRoles } from '../workbench/state.mjs'
 import { rowAudio, rowChanged, rowQueued, rowRetakeState } from './scriptAudio.mjs'
 import { productionView } from '../workbench/productionView.mjs'
@@ -254,6 +255,22 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
   function controls(part, label) {
     return <ScriptRowEditor part={part} roles={listedRoles} others={split.others} disabled={readOnly} label={label} change={patch=>change(part,patch)} newRole={newRole} engine={engine}/>
   }
+  const batchExcerpt = () => {
+    const jobId = chapter.playbackJob?.id
+    const media = chapter.media ?? []
+    if (!jobId || !media.length || !selection.size) return
+    const selectedParts = groups.filter(part => selection.has(part.id))
+    if (!selectedParts.length) return
+    const minStart = Math.min(...selectedParts.map(p => p.start))
+    const maxEnd = Math.max(...selectedParts.map(p => p.end))
+    const indices = []
+    media.forEach((m, idx) => {
+      if (m.ready && m.end > minStart && m.start < maxEnd) indices.push(idx)
+    })
+    if (!indices.length) return
+    void startExcerptDownload({ job: jobId, from: indices[0], to: indices.at(-1), format: 'mp3', subtitles: 'srt', speakers: true, title: chapter.title, notify })
+  }
+  const canExcerpt = Boolean(chapter.playbackJob?.id && chapter.media?.some(m => m.ready) && selection.size > 0)
   return <section className="lv-editor" aria-label={t("角色与台词")}>
     <div className="lv-heading"><small>{groups.length}{" " + t("段 · 按当前模式：")}{mode === 'multi' ? t('多角色演绎') : t('单人朗读')} · {draft ? t('修改尚未保存') : t('点击「调整」编辑配音')}{plan?.status === 'ok' ? t(" · 已合成 {v1} / {v2} 段", { v1: groups.filter(part => rowAudio(part, plan).audio === 'ready' && !rowChanged(part, state.annotations, chapter.editorial?.annotations)).length, v2: groups.length }) : ''}</small>
       {draft && <div className="lv-inline"><button disabled={busy} onClick={() => setDraft(null)}>{t("放弃台词草稿")}</button>
@@ -275,7 +292,8 @@ export function ScriptList({ chapter, roles, draft, setDraft, stale, textDirty, 
       {selecting && <div className="lv-inline"><span>{t("已选") + " "}{selection.size}{" " + t("段")}</span><button disabled={readOnly} onClick={()=>setSelection(new Set(filtered.map(part=>part.id)))}>{t("全选筛选结果")}</button>
         <select aria-label={t("批量改派说话人")} disabled={readOnly || !selection.size} value="" onChange={e=>batchChange({roleId:e.target.value})}><option value="">{t("改派说话人")}</option>{roles.map(role=><option key={role.id} value={role.id}>{roleDisplayName(role)}</option>)}</select>
         <select aria-label={t("批量设置情绪")} disabled={readOnly || !selection.size} value="" onChange={e=>batchChange({emotion:e.target.value,intensity:presetIntensity(e.target.value),instruct:INSTRUCT_PRESETS[e.target.value][0]})}><option value="">{t("设置情绪")}</option>{Object.entries(labels).map(([id,label])=><option key={id} value={id}>{t(label)}</option>)}</select>
-        <button disabled={readOnly || !selection.size} onClick={()=>batchChange({instruct:undefined})}>{t("清除语气")}</button></div>}
+        <button disabled={readOnly || !selection.size} onClick={()=>batchChange({instruct:undefined})}>{t("清除语气")}</button>
+        {canExcerpt && <button type="button" onClick={batchExcerpt}>{t("导出高光片段")}</button>}</div>}
     </div>
     <div className="lv-script" ref={listRef} onKeyDown={onRowKey}>{pageRows.map((part, index) => {
       const { roleId, emotion } = part

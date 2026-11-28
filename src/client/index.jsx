@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
+import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { get, post, url } from './api.mjs'
 import { nextPollDelay } from './workbench/polling.mjs'
 import { Icon } from './components/Icon.jsx'
@@ -20,8 +20,9 @@ import { isLastTurn } from './chat/dockModel.mjs'
 import { createSpeechPlayer } from './speech/speechPlayer.mjs'
 import { SpeakAction } from './chat/SpeakAction.jsx'
 import { SpeakCard } from './chat/SpeakCard.jsx'
-import { AddChaptersCard, ImportCard, ImportConfirm } from './chat/LibraryCards.jsx'
+import { AddChaptersCard, ExportCard, GotoCard, ImportCard, ImportConfirm } from './chat/LibraryCards.jsx'
 import { DeliverableImport } from './chat/DeliverableImport.jsx'
+import { CompanionPane } from './chat/CompanionPane.jsx'
 import { PLUGIN_ID } from '../domain/plugin.mjs'
 import { deferText, followHostLanguage, getLanguage, normalizeLanguage, registerTraditionalChinese, subscribeLanguage, translate as t } from './i18n/locale.mjs'
 import tokens from './styles/tokens.css'
@@ -228,6 +229,7 @@ export function apply(ctx) {
   // the host's --dsw-* tokens). The workbench keeps its own paper and graphite skins.
   const openChapter = (chapter, job) => navigate({ chapter, job })
   const openWorkbench = () => { playback.cancel(); ctx.layout.selectPanel(PANEL) }
+  const openConversation = () => { try { ctx.layout.selectPanel('conversation') } catch {} }
   ctx.effect(() => {
     const open = () => { openWorkbench(); window.dispatchEvent(new Event('laivox-open-settings')) }
     window.addEventListener('laivox-request-settings', open)
@@ -243,9 +245,17 @@ export function apply(ctx) {
       : <div className="lv-host lv-mini-anchor"><MiniCapsule player={player} notice={capsuleState.notice} dismissed={capsuleState.dismissed} dismiss={capsule.dismiss} mode={capsuleMode} open={openChapter} speech={speech}/></div>
   }
 
-  function DockSlot({ sessionKey, sessionId }) {
+  function DockSlot({ sessionKey, sessionId, inputActions }) {
     const session = sessionKey ?? sessionId
     useAnnouncedSpeech(session)
+    useEffect(() => {
+      const handler = event => {
+        const text = event?.detail?.text
+        if (text && typeof inputActions?.setText === 'function') inputActions.setText(text)
+      }
+      window.addEventListener('laivox-ask-ai', handler)
+      return () => window.removeEventListener('laivox-ask-ai', handler)
+    }, [inputActions])
     const mode = useSyncExternalStore(dockPrefs.subscribe, dockPrefs.getSnapshot)
     return <NovelDock key={session} session={session} player={player} feed={feed} actions={proposals} listen={playback.listen}
       mode={mode} dismissals={dismissals}
@@ -292,6 +302,13 @@ export function apply(ctx) {
   function ImportTool(props) {
     return <ImportCard {...props} feed={feed} openBook={openBook} preview={previewImport}/>
   }
+  function ExportTool(props) {
+    return <ExportCard {...props} openBook={openBook}/>
+  }
+  const openAt = (chapter, start) => navigate({ chapter, start })
+  function GotoTool(props) {
+    return <GotoCard {...props} open={openAt}/>
+  }
   // A delivered TXT/EPUB opens straight in the workbench import preview.
   function DeliverableAction(props) {
     return <DeliverableImport actionUrl={props.actionUrl} openImport={previewImport}/>
@@ -321,7 +338,30 @@ export function apply(ctx) {
     </div>
   }
 
-  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL }, withLanguage(props => <Shell {...{ player, navigation, memory, isPanelActive }} useSessions={props?.useSessions}/>)))
+  function HostSettingsCard() {
+    const [info, setInfo] = useState(null)
+    const [copied, setCopied] = useState(false)
+    useEffect(() => {
+      let alive = true
+      get('plugin/update-info').then(value => { if (alive) setInfo(value) }).catch(() => {})
+      return () => { alive = false }
+    }, [])
+    const copy = async () => {
+      const cmd = info?.command || 'dsh plugin add dsh-laivox-tts'
+      try { await navigator.clipboard.writeText(cmd); setCopied(true); setTimeout(() => setCopied(false), 2000) } catch {}
+    }
+    return <div className="lv-host" style={{ display: 'grid', gap: 8 }}>
+      <div><strong>{label('小说配音（LaiVox）')}</strong>{info?.running ? <span style={{ marginLeft: 8, opacity: 0.7 }}>{'v' + info.running}</span> : null}</div>
+      <div style={{ opacity: 0.85 }}>{t('多角色有声剧制作、AI 说话人分配与逐词随读高亮。默认内置 Edge 在线语音，无需账号。')}</div>
+      <div className="lv-hactions" style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        <button type="button" className="lv-hbtn lv-hprimary" onClick={openWorkbench}>{t('打开工作台')}</button>
+        <button type="button" className="lv-hbtn" onClick={() => window.dispatchEvent(new Event('laivox-request-settings'))}>{t('打开插件设置')}</button>
+        <button type="button" className="lv-hbtn" onClick={() => void copy()}>{copied ? t('已复制') : t('复制更新命令')}</button>
+      </div>
+    </div>
+  }
+
+  ctx.slots.inject('main', () => ctx.slots.register({ name: 'main', key: PANEL }, withLanguage(props => <Shell {...{ player, navigation, memory, isPanelActive, openConversation }} useSessions={props?.useSessions}/>)))
   ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({ name: 'sidebar.panellist', id: PANEL, order: 10, label: () => label('小说配音（LaiVox）') }, () => <Icon name="AudioLines" size={18}/>))
   ctx.slots.inject('shell.overlay', () => ctx.slots.register({ name: 'shell.overlay', id: PANEL, order: 10 }, withLanguage(MiniPlayer)))
   ctx.slots.inject('conversation.input.dock', () => ctx.slots.register({
@@ -339,9 +379,23 @@ export function apply(ctx) {
     { name: 'tool.call.toolview', key: 'laivox_add_chapters' }, withLanguage(AddChaptersTool)))
   ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
     { name: 'tool.call.toolview', key: 'laivox_import_file' }, withLanguage(ImportTool)))
+  ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
+    { name: 'tool.call.toolview', key: 'laivox_export' }, withLanguage(ExportTool)))
+  ctx.slots.inject('tool.call.toolview', () => ctx.slots.register(
+    { name: 'tool.call.toolview', key: 'laivox_goto' }, withLanguage(GotoTool)))
   // After the host's own copy and feedback buttons.
   ctx.slots.inject('conversation.chat.assistant-actions', () => ctx.slots.register(
     { name: 'conversation.chat.assistant-actions', id: PANEL, order: 50, label: () => label('朗读') }, withLanguage(MessageSpeak)))
   ctx.slots.inject('conversation.chat.turnTail', () => ctx.slots.register(
     { name: 'conversation.chat.turnTail', id: PANEL, order: 40, label: () => label('朗读结果') }, withLanguage(OutcomeTail)))
+  try {
+    ctx.slots.inject('settings.section', () => ctx.slots.register(
+      { name: 'settings.section', id: PANEL, order: 45, label: () => label('小说配音（LaiVox）') }, withLanguage(HostSettingsCard)))
+  } catch { /* older host versions may not expose settings.section */ }
+  try {
+    ctx.slots.inject('sidebar.right.pane.tab', () => ctx.slots.register(
+      { name: 'sidebar.right.pane.tab', key: PANEL }, withLanguage(() => <CompanionPane player={player} openWorkbench={openWorkbench}/>)))
+    ctx.slots.inject('sidebar.right.pane.tab.title', () => ctx.slots.register(
+      { name: 'sidebar.right.pane.tab.title', key: PANEL }, withLanguage(() => <span>{label('伴听视图')}</span>)))
+  } catch { /* older host versions may not expose sidebar right tab */ }
 }

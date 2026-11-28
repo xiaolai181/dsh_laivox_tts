@@ -5,6 +5,7 @@ import { post, url } from '../api.mjs'
 // paragraph follow each other without a gap.
 export const PARAGRAPH_PAUSE_MS = 280
 export const SLEEP_MINUTES = [15, 30, 60]
+export const SINGLE_ELEMENT_AUDIO = true
 const FADE_MS = 3000
 const FADE_STEPS = 30
 
@@ -22,18 +23,37 @@ function storedVolume(storage) {
   return 1
 }
 
+export function isMobileWebKit(ua = typeof navigator !== 'undefined' ? navigator.userAgent : '') {
+  const text = String(ua ?? '')
+  if (!text || /Electron/i.test(text)) return false
+  if (/(?:iPhone|iPad|iPod)/i.test(text)) return true
+  return /Macintosh/i.test(text) && /Safari/i.test(text) && !/Chrome|Chromium|Edg/i.test(text)
+    && typeof navigator !== 'undefined' && Number(navigator.maxTouchPoints) > 1
+}
+
 export function createPlayerController({
   audio, spare, save = value => post('playback/save', value, true),
   getPreferences = () => ({ paragraphPause: true }),
   mediaSession = globalThis.navigator?.mediaSession,
   storage = globalThis.localStorage,
+  singleElement,
+  fetchImpl = globalThis.fetch,
+  createObjectURL = globalThis.URL?.createObjectURL?.bind(globalThis.URL),
+  revokeObjectURL = globalThis.URL?.revokeObjectURL?.bind(globalThis.URL),
 } = {}) {
+  const useSingleBlob = singleElement === true || (SINGLE_ELEMENT_AUDIO && singleElement === undefined && audio === undefined && spare === undefined && isMobileWebKit())
   let active = audio ?? new Audio()
-  let standby = spare !== undefined ? spare : (audio ? null : new Audio())
+  let standby = useSingleBlob ? null : (spare !== undefined ? spare : (audio ? null : new Audio()))
   const elements = [active, standby].filter(Boolean)
-  let state = { chapter: null, title: '', bookTitle: '', job: null, nextId: null, segments: [], n: 0, offset: 0, rate: 1, volume: storedVolume(storage), phase: 'idle', sleep: null, swapped: '', autoResuming: false }
+  let state = { chapter: null, title: '', bookTitle: '', job: null, nextId: null, segments: [], roleNames: {}, n: 0, offset: 0, rate: 1, volume: storedVolume(storage), phase: 'idle', sleep: null, swapped: '', autoResuming: false }
+  const rolesRecord = (roles, fallback) => Array.isArray(roles)
+    ? Object.fromEntries(roles.filter(r => r?.id).map(r => [r.id, r.name ?? '']))
+    : (fallback ?? {})
   let source = ''
   let standbySource = ''
+  let activeBlobUrl = ''
+  let preloaded = null
+  let preloadAbort = null
   let intent = false
   let request = 0
   let persisted = 0
@@ -131,9 +151,10 @@ export function createPlayerController({
     suspend()
     source = ''
     clearStandby()
+    revokeActiveBlob()
     publish({
       chapter: chapter.id, title: chapter.title ?? '', bookTitle: chapter.bookTitle ?? '', job, nextId: chapter.nextId ?? null,
-      segments: chapter.media, n: partIndex(chapter.media, at), offset: 0, phase: 'idle',
+      segments: chapter.media, roleNames: rolesRecord(chapter.roles, state.roleNames), n: partIndex(chapter.media, at), offset: 0, phase: 'idle',
       settled: jobState !== 'running' && jobState !== 'queued',
       generationStopped: jobState === 'paused' || jobState === 'cancelled',
       autoResuming: jobState === 'paused' && Number.isFinite(chapter.playbackJob?.autoResume?.at),
@@ -148,20 +169,75 @@ export function createPlayerController({
     if (!next) return
     swapTo(next.chapter, next.at, true)
   }
+  function revokeActiveBlob() {
+    if (!activeBlobUrl) return
+    try { revokeObjectURL?.(activeBlobUrl) } catch { /* ignore revoke errors */ }
+    activeBlobUrl = ''
+  }
+  function clearPreload() {
+    if (preloadAbort) {
+      preloadAbort.abort()
+      preloadAbort = null
+    }
+    if (preloaded?.blobUrl) {
+      try { revokeObjectURL?.(preloaded.blobUrl) } catch { /* ignore revoke errors */ }
+    }
+    preloaded = null
+  }
+  function applySource(target) {
+    if (useSingleBlob && preloaded?.target === target && preloaded.blobUrl) {
+      const nextBlob = preloaded.blobUrl
+      preloaded = null
+      const previousBlob = activeBlobUrl
+      activeBlobUrl = nextBlob
+      active.src = nextBlob
+      if (previousBlob) {
+        try { revokeObjectURL?.(previousBlob) } catch { /* ignore revoke errors */ }
+      }
+      return
+    }
+    revokeActiveBlob()
+    active.src = target
+  }
   function clearStandby() {
     standbySource = ''
+    clearPreload()
     if (!standby) return
     standby.pause()
     standby.removeAttribute('src')
     standby.load?.()
   }
 
-  // Load the next part into the idle element while the current one plays.
+  // Load the next part into the idle element while the current one plays,
+  // or preload a Blob ObjectURL in single-element mobile Safari mode.
   function preload() {
-    if (!standby || !intent || !state.job) return
+    if (!intent || !state.job) return
     const next = state.segments[state.n + 1]
     if (!next?.ready) return
     const target = segmentUrl(state.n + 1)
+    if (useSingleBlob) {
+      if (preloaded?.target === target || preloadAbort?.target === target) return
+      clearPreload()
+      if (typeof fetchImpl !== 'function' || typeof createObjectURL !== 'function') return
+      const controller = new AbortController()
+      controller.target = target
+      preloadAbort = controller
+      Promise.resolve(fetchImpl(target, { cache: 'no-store', signal: controller.signal }))
+        .then(response => (response?.ok ? response.blob() : null))
+        .then(blob => {
+          if (!blob || controller.signal.aborted || preloadAbort !== controller) return
+          const blobUrl = createObjectURL(blob)
+          if (controller.signal.aborted || preloadAbort !== controller) {
+            try { revokeObjectURL?.(blobUrl) } catch {}
+            return
+          }
+          preloadAbort = null
+          preloaded = { target, blobUrl }
+        })
+        .catch(() => { if (preloadAbort === controller) preloadAbort = null })
+      return
+    }
+    if (!standby) return
     if (standbySource === target) return
     standbySource = target
     standby.preload = 'auto'
@@ -178,6 +254,7 @@ export function createPlayerController({
 
   function playActive() {
     const version = ++request
+    active.defaultPlaybackRate = state.rate
     active.playbackRate = state.rate
     active.volume = state.volume
     endedNotified = false
@@ -221,7 +298,7 @@ export function createPlayerController({
     if (next !== source) {
       source = next
       seekOffset = state.offset
-      active.src = next
+      applySource(next)
     }
     playActive()
   }
@@ -234,6 +311,18 @@ export function createPlayerController({
     if (!intent) return
     const row = state.segments[state.n]
     const target = segmentUrl(state.n)
+    if (useSingleBlob && preloaded?.target === target && row?.ready) {
+      source = target
+      const offset = state.offset
+      seekOffset = offset
+      applySource(target)
+      if (offset > 0 && active.readyState >= 1 && Number.isFinite(active.duration)) {
+        active.currentTime = Math.min(offset, Math.max(0, active.duration - 0.05))
+        seekOffset = 0
+      }
+      playActive()
+      return
+    }
     if (standby && standbySource === target && row?.ready) {
       const previous = active
       active = standby
@@ -285,7 +374,7 @@ export function createPlayerController({
       // While pausing between paragraphs the player still counts as playing.
       publish({ n: state.n + 1, offset: 0, phase: paragraph ? 'playing' : 'buffering' })
       persist()
-      if (paragraph) pauseTimer = setTimeout(advance, PARAGRAPH_PAUSE_MS)
+      if (paragraph && !useSingleBlob) pauseTimer = setTimeout(advance, PARAGRAPH_PAUSE_MS)
       else advance()
       return
     }
@@ -396,10 +485,11 @@ export function createPlayerController({
           suspend()
           source = ''
           clearStandby()
+          revokeActiveBlob()
           const saved = chapter.playback?.job === job ? chapter.playback : null
           position = { ...resumePoint(saved, chapter.media), phase: 'idle' }
         }
-        publish({ title: chapter.title ?? state.title, nextId: chapter.nextId ?? null, segments: chapter.media, settled, generationStopped, autoResuming, growing,
+        publish({ title: chapter.title ?? state.title, nextId: chapter.nextId ?? null, segments: chapter.media, roleNames: rolesRecord(chapter.roles, state.roleNames), settled, generationStopped, autoResuming, growing,
           stale: chapter.playbackStale, ...(takeFocus || state.chapter !== chapter.id ? { swapped: '' } : {}),
           ...position, ...(takeFocus && !record?.failed ? { saveMessage: '', saveFailed: false } : {}) })
         // blocked waits for audio that a stopped job could not make. Once the job
@@ -417,6 +507,7 @@ export function createPlayerController({
       suspend()
       source = ''
       clearStandby()
+      revokeActiveBlob()
       endedNotified = false
       const saved = chapter.playback?.job === job ? chapter.playback : null
       const placed = saved ? resumePoint(saved, chapter.media) : Number.isSafeInteger(chapter.playback?.start) ? { n: partIndex(chapter.media, chapter.playback.start), offset: 0 } : resumePoint(null, chapter.media)
@@ -429,6 +520,7 @@ export function createPlayerController({
       if (state.sleep?.mode === 'chapter' && state.sleep.chapter !== chapter.id) publish({ sleep: null })
       publish({
         chapter: chapter.id, title: chapter.title, bookTitle: chapter.bookTitle ?? '', job, nextId: chapter.nextId ?? null, segments: chapter.media,
+        roleNames: rolesRecord(chapter.roles, {}),
         ...placed,
         rate: saved?.rate ?? state.rate, volume: state.volume, phase: 'idle',
         settled, generationStopped, autoResuming, growing, stale: chapter.playbackStale, swapped: '', saveMessage: '', saveFailed: Boolean(record?.failed),
@@ -485,6 +577,7 @@ export function createPlayerController({
       active.pause()
       source = ''
       clearStandby()
+      revokeActiveBlob()
       publish({ n, offset, phase: intent ? 'buffering' : 'paused' })
       start()
       persist()
@@ -512,7 +605,10 @@ export function createPlayerController({
       this.seek(n, offset)
     },
     speed(rate) {
-      for (const element of elements) element.playbackRate = rate
+      for (const element of elements) {
+        element.defaultPlaybackRate = rate
+        element.playbackRate = rate
+      }
       publish({ rate })
       persist()
     },
@@ -542,6 +638,8 @@ export function createPlayerController({
       persist()
       previewStop?.()
       suspend()
+      clearStandby()
+      revokeActiveBlob()
       clearSleep()
       endedListeners.clear()
       for (const element of elements) {

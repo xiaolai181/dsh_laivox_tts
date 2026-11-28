@@ -4,7 +4,7 @@
 import { basename, extname } from 'node:path'
 import { IMPORT_LIMIT } from './import/index.mjs'
 
-export const IMPORTABLE = ['.txt', '.epub', '.pdf']
+export const IMPORTABLE = ['.txt', '.epub', '.pdf', '.md', '.markdown', '.docx', '.html', '.htm']
 
 const fsCodes = {
   FS_NOT_FOUND: 'FILE_NOT_FOUND', FS_NOT_DIRECTORY: 'FILE_NOT_FOUND', FS_NOT_REGULAR_FILE: 'FILE_NOT_FOUND',

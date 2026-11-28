@@ -59,3 +59,5 @@
 .lv-snippet-actions {flex-wrap:nowrap;}
 .lv-ui .lv-field-label {font-size:13px;color:var(--lv-ink-dim);}
 .lv-batch-config {color:var(--lv-ink-mute);font-size:12px;}
+.lv-export-panel {display:grid;gap:8px;padding:10px 12px;border:1px solid var(--lv-line);border-radius:10px;background:var(--lv-surface);}
+.lv-export-panel input[type=number] {width:68px;}

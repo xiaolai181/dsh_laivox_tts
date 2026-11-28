@@ -39,7 +39,8 @@ export function createMp3Encoder({ timeout = DEFAULT_TIMEOUT } = {}) {
   }
 
   function spawn() {
-    const instance = new Worker(new URL('./mp3-worker.mjs', import.meta.url))
+    // Reclaim short-lived lamejs typed arrays promptly without limiting old-space growth.
+    const instance = new Worker(new URL('./mp3-worker.mjs', import.meta.url), { resourceLimits: { maxYoungGenerationSizeMb: 16 } })
     instance.on('message', message => {
       if (worker !== instance) return
       const item = pending.get(message?.id)

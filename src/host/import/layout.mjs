@@ -25,8 +25,8 @@ export function normalizeDraft(data, session) {
     ...chapter, text: data.format === 'epub' && index < data.chapters.length - 1 ? chapter.text + '\n' : chapter.text,
   }))
   if (data.format === 'epub') cuts.forEach((cut, index) => { cut.offset += index })
-  return createLayout({ ...data, chapters, cuts, structure: {} }, data.fingerprint,
-    data.title + '.' + (data.format === 'txt' || data.format === 'pdf' ? data.format : 'epub'), session)
+  const ext = { txt: 'txt', pdf: 'pdf', md: 'md', docx: 'docx', html: 'html', epub: 'epub' }[data.format] ?? 'epub'
+  return createLayout({ ...data, chapters, cuts, structure: {} }, data.fingerprint, data.title + '.' + ext, session)
 }
 
 export function resolveLayout(data, review) {

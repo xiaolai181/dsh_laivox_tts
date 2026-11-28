@@ -1,7 +1,8 @@
 import { displayText, deferText, translate as t } from '../i18n/locale.mjs'
 import React, { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { explain, get, post } from '../api.mjs'
-import { addChaptersView, importFileView } from './libraryCards.mjs'
+import { addChaptersView, exportCardView, gotoCardView, importFileView } from './libraryCards.mjs'
+import { downloadsSnapshot, startBookExportDownload, subscribeDownloads } from '../workbench/downloads.mjs'
 
 const line = body => <div className="lv-host lv-htool"><div className="lv-hline">{body}</div></div>
 
@@ -92,4 +93,45 @@ export function ImportCard({ phase, block, sessionId, feed, openBook, preview })
   if (view.kind === 'failed') return line(<span className="lv-halert" role="alert">{t("文件没有导入")}{view.detail ? '：' + view.detail : '。'}</span>)
   return <div className="lv-host lv-htool"><ImportConfirm id={view.id} session={sessionId} title={view.title} chapters={view.chapters}
     feed={feed} openBook={openBook} preview={preview}/></div>
+}
+
+export function ExportCard({ phase, block, openBook }) {
+  const view = exportCardView({ phase, block })
+  const downloads = useSyncExternalStore(subscribeDownloads, downloadsSnapshot)
+  const [notice, setNotice] = useState('')
+  if (view.kind === 'running') return line(<span className="lv-hmeta">{t("正在计算导出内容与时长…")}</span>)
+  if (view.kind === 'failed') return line(<span className="lv-halert" role="alert">{t("无法生成导出单")}{view.detail ? '：' + view.detail : '。'}</span>)
+  const format = view.params.format === 'wav' ? 'wav' : 'mp3'
+  const mode = view.params.mode === 'single' ? 'single' : 'zip'
+  const entry = downloads.get('book:' + view.book + ':' + mode + ':' + format)
+  const preparing = entry?.phase === 'preparing'
+  return line(<>
+    <span className="lv-hgrow">
+      <span className="lv-htitle">《{view.title}》</span>
+      <span className="lv-hmeta">{" " + t("· {ready}/{total} 章 · 约 {mins} 分钟", { ready: view.readyCount, total: view.totalChapters, mins: view.minutes })}</span>
+      {notice && <span className="lv-hmeta">{" · "}{displayText(notice)}</span>}
+    </span>
+    <span className="lv-hactions">
+      {preparing
+        ? <button className="lv-hbtn" onClick={() => entry.cancel()}>{t("取消")}{entry.total ? ` (${entry.done}/${entry.total})` : ''}</button>
+        : <button className="lv-hbtn lv-hprimary" onClick={() => void startBookExportDownload({ book: view.book, title: view.title, params: view.params, notify: setNotice })}>{t("开始下载")}</button>}
+      <button className="lv-hbtn" onClick={() => openBook(view.book)}>{t("打开")}</button>
+    </span>
+  </>)
+}
+
+export function GotoCard({ phase, block, open }) {
+  const view = gotoCardView({ phase, block })
+  if (view.kind === 'running') return line(<span className="lv-hmeta">{t("正在定位章节…")}</span>)
+  if (view.kind === 'failed') return line(<span className="lv-halert" role="alert">{t("无法定位章节")}{view.detail ? '：' + view.detail : '。'}</span>)
+  return line(<>
+    <span className="lv-hgrow">
+      <span className="lv-htitle">《{view.bookTitle}》</span>
+      <span className="lv-hmeta">{" · "}{t("第 {v1} 章", { v1: view.ordinal })}{" · "}{view.chapterTitle}</span>
+      {view.preview && <span className="lv-hmeta">{" · "}{view.preview}</span>}
+    </span>
+    <span className="lv-hactions">
+      <button className="lv-hbtn lv-hprimary" onClick={() => open(view.chapter, view.start)}>{t("打开这一章并定位")}</button>
+    </span>
+  </>)
 }

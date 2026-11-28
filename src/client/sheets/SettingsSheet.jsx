@@ -50,6 +50,7 @@ function Conversation({ values, save }) {
     <div className="lv-segmented" role="group" aria-label={t("右下角迷你播放条")}>{[['auto', t('播放或暂停时')], ['playing', t('仅播放时')], ['never', t('不显示')]].map(([key, label]) =>
       <button type="button" key={key} aria-pressed={capsuleValue === key} onClick={() => { if (capsuleValue !== key) void save({ miniCapsule: key }) }}>{label}</button>)}</div>
     <small>{t("离开工作台后右下角悬浮播放条的显示时机；也可随时点条上的 × 关闭。对话消息的即时朗读提示不受影响。")}</small>
+    <small>{t("对话右侧栏「伴听视图」会共享当前播放器状态，方便边听边聊。")}</small>
   </section>
 }
 
@@ -518,6 +519,73 @@ function LaivoxCardGate({ active, focus, keyInfo, packHref, packRequest, packIde
   </section>
 }
 
+function AboutUpdate() {
+  const [info, setInfo] = useState(null)
+  const [checking, setChecking] = useState(false)
+  const [updating, setUpdating] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [statusMessage, setStatusMessage] = useState('')
+  const alive = useRef(true)
+  useEffect(() => {
+    alive.current = true
+    get('plugin/update-info').then(value => { if (alive.current) setInfo(value) }).catch(() => {})
+    return () => { alive.current = false }
+  }, [])
+  async function checkNow() {
+    if (checking) return
+    setChecking(true); setStatusMessage('')
+    try {
+      const value = await get('plugin/update-info', { check: 1, force: 1 })
+      if (!alive.current) return
+      setInfo(value)
+      if (value?.error) setStatusMessage(t('无法检查更新，可在终端执行下方命令。'))
+      else if (value?.available) setStatusMessage(t('发现新版本 v{version}（当前 v{current}）', { version: value.latest, current: value.running || '-' }))
+      else if (value?.latest) setStatusMessage(t('已是最新版本 v{version}', { version: value.running || value.latest }))
+    } catch {
+      if (alive.current) setStatusMessage(t('无法检查更新，可在终端执行下方命令。'))
+    } finally {
+      if (alive.current) setChecking(false)
+    }
+  }
+  async function copyCommand() {
+    const command = info?.command || 'dsh plugin add dsh-laivox-tts'
+    try {
+      await navigator.clipboard.writeText(command)
+      if (alive.current) { setCopied(true); setTimeout(() => { if (alive.current) setCopied(false) }, 2000) }
+    } catch {
+      if (alive.current) setStatusMessage(t('无法访问剪贴板，请手动复制下方命令。'))
+    }
+  }
+  async function runAutoUpdate() {
+    if (updating) return
+    setUpdating(true); setStatusMessage('')
+    try {
+      const result = await post('plugin/update', {})
+      if (!alive.current) return
+      if (result?.ok && result.updated) setStatusMessage(t('已安装 v{version}，完全退出并重启 DSH 后生效。', { version: result.latest }))
+      else if (result?.ok) setStatusMessage(t('已是最新版本 v{version}', { version: result.running || result.latest }))
+      else setStatusMessage(t('请在完全退出 DSH 后，于终端执行下方更新命令。'))
+    } catch {
+      if (alive.current) setStatusMessage(t('请在完全退出 DSH 后，于终端执行下方更新命令。'))
+    } finally {
+      if (alive.current) setUpdating(false)
+    }
+  }
+  return <section className="lv-card"><h3 id="lv-about">{t("关于与更新")}</h3>
+    <div className="lv-inline">
+      <span>{t("当前版本")}{info?.running ? ' v' + info.running : ''}</span>
+      <button type="button" disabled={checking || updating} onClick={() => void checkNow()}>{checking ? t('正在检查更新…') : t('检查更新')}</button>
+      {info?.available && info?.canAutoUpdate && <button type="button" className="lv-primary" disabled={updating} onClick={() => void runAutoUpdate()}>{updating ? t('正在更新…') : t('立即更新')}</button>}
+    </div>
+    {statusMessage && <small role="status">{statusMessage}</small>}
+    <div className="lv-inline">
+      <code>{info?.command || 'dsh plugin add dsh-laivox-tts'}</code>
+      <button type="button" onClick={() => void copyCommand()}>{copied ? t('已复制') : t('复制更新命令')}</button>
+    </div>
+    <small>{t("仅在你主动点击「检查更新」时联网查询，平时不会后台请求。")}</small>
+  </section>
+}
+
 export function SettingsSheet({ w, space, focus, player }) {
   const root = useRef(null)
   useEffect(() => {
@@ -536,5 +604,6 @@ export function SettingsSheet({ w, space, focus, player }) {
     <Conversation values={values} save={w.saveSetting}/>
     <Appearance values={values} save={w.saveSetting}/>
     <Storage values={values} save={w.saveSetting} space={space} compact={w.compact} decide={w.decide} changed={w.refreshShelf}/>
+    <AboutUpdate/>
   </div>
 }

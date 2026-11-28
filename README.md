@@ -31,20 +31,20 @@ Make sure the `dsh` command is available:
 ### Online install (recommended)
 
 ```sh
-dsh plugin --profile desktop add "https://github.com/xiaolai181/dsh_laivox_tts/releases/latest/download/dsh-laivox-tts.tgz"
+dsh plugin --profile desktop add dsh-laivox-tts
 ```
 
-This installs a prebuilt package—nothing is compiled locally and no install scripts run. To pin a specific version, replace `latest/download` with `download/v0.7.12` (see [Releases](https://github.com/xiaolai181/dsh_laivox_tts/releases)).
+This installs the prebuilt package from npm—nothing is compiled locally and no install scripts run.
 
-### Offline package install
+### Install from GitHub Release or offline package
 
-Download `dsh-laivox-tts.tgz` from [Releases](https://github.com/xiaolai181/dsh_laivox_tts/releases) and run this in the folder containing it:
+If npm is unavailable or you prefer pinning a release tarball, install via URL or download `dsh-laivox-tts.tgz` from [Releases](https://github.com/xiaolai181/dsh_laivox_tts/releases) (replace `latest/download` with `download/v0.7.13` to pin a version):
 
 ```sh
+dsh plugin --profile desktop add "https://github.com/xiaolai181/dsh_laivox_tts/releases/latest/download/dsh-laivox-tts.tgz"
+# Or from a downloaded local file:
 dsh plugin --profile desktop add ./dsh-laivox-tts.tgz
 ```
-
-Useful when the machine does not have direct GitHub access.
 
 <details>
 <summary>Install from a source folder (for developers)</summary>
@@ -101,7 +101,7 @@ Your bookshelf, text, scripts, and audio stay on your machine:
 <summary>Data folder and backup notes before upgrading</summary>
 
 - All plugin data lives in `<DSH home>/profiles/<profile>/dsh-laivox-tts/` (default DSH home: `~/.dsh`), with `library.sqlite` storing your bookshelf, scripts, jobs, audio, and playback progress.
-- **Back up before upgrading**: fully quit DSH and copy the entire `dsh-laivox-tts` folder. A newer release may upgrade the local database schema (currently v12), which older plugin versions cannot open.
+- **Back up before upgrading**: fully quit DSH and copy the entire `dsh-laivox-tts` folder. A newer release may upgrade the local database schema (currently v13), which older plugin versions cannot open.
 - Built-in sample books are seeded only once on a fresh empty profile (existing profiles with books are untouched on upgrade) and will not reappear after deletion.
 
 </details>

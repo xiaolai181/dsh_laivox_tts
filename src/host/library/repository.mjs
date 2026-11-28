@@ -475,7 +475,17 @@ export async function openLibrary(root, { audioLimit: initialAudioLimit = AUDIO_
       return row && { ...row, payload: parse(row.payload) }
     },
     imports: (session = null) => all("SELECT id,json_extract(payload,'$.title') title FROM imports WHERE session IS ? ORDER BY created DESC LIMIT 20", session),
-    publishedImport: (id, session) => get('SELECT id FROM published_imports WHERE id=? AND session IS ?', id, session),
+    async publishedImport(id, session) {
+      const row = await get('SELECT id FROM published_imports WHERE id=? AND session IS ?', id, session)
+      if (!row) return null
+      const mapped = await get("SELECT json_extract(result,'$.book') book FROM operations WHERE id=? AND kind='import-append'", 'import-target:' + id)
+      return { id: row.id, book: mapped?.book || row.id }
+    },
+    findRelatedBook: args => command('findRelatedBook', args, 'read'),
+    mergeBookChapters: args => command('mergeBookChapters', args, true),
+    listNotes: args => command('listNotes', args, 'read'),
+    saveNote: args => command('saveNote', args, true),
+    deleteNote: args => command('deleteNote', args, true),
     discardImport: id => run('DELETE FROM imports WHERE id=?', id),
     async publishImport(id, session, data, ordinals, duplicate) {
       if (await get('SELECT id FROM books WHERE id=?', id)) return { id }
@@ -495,13 +505,36 @@ export async function openLibrary(root, { audioLimit: initialAudioLimit = AUDIO_
     async toolBooks(offset = 0, q = '') {
       const [books, total] = await execute([
         sql(`SELECT b.id,b.title,(SELECT count(*) FROM chapters WHERE book=b.id) chapters,
-          (SELECT count(DISTINCT a.chapter) FROM audio a JOIN chapters c ON c.id=a.chapter WHERE c.book=b.id) withAudio
+          (SELECT count(DISTINCT a.chapter) FROM audio a JOIN chapters c ON c.id=a.chapter WHERE c.book=b.id) withAudio,
+          (SELECT coalesce(sum(characters),0) FROM chapters WHERE book=b.id) totalChars,
+          (SELECT c.id FROM chapters c WHERE c.book=b.id AND c.playback IS NOT NULL
+            ORDER BY coalesce(json_extract(c.playback,'$.at'),0) DESC, c.ordinal DESC LIMIT 1) currentChapterId,
+          (SELECT c.title FROM chapters c WHERE c.book=b.id AND c.playback IS NOT NULL
+            ORDER BY coalesce(json_extract(c.playback,'$.at'),0) DESC, c.ordinal DESC LIMIT 1) currentChapterTitle,
+          (SELECT c.ordinal FROM chapters c WHERE c.book=b.id AND c.playback IS NOT NULL
+            ORDER BY coalesce(json_extract(c.playback,'$.at'),0) DESC, c.ordinal DESC LIMIT 1) currentOrdinal
           FROM books b WHERE NOT EXISTS(SELECT 1 FROM chat_readings WHERE book=b.id)
           AND b.title LIKE ? ESCAPE '\\' ORDER BY created DESC,id LIMIT 30 OFFSET ?`, [titlePattern(q), offset], 'all'),
         sql(`SELECT count(*) total FROM books b WHERE NOT EXISTS(SELECT 1 FROM chat_readings WHERE book=b.id) AND b.title LIKE ? ESCAPE '\\'`, [titlePattern(q)], 'get'),
       ], 'read')
+      for (const row of books) {
+        if (row.currentOrdinal && row.chapters > 0) {
+          const prior = await get('SELECT coalesce(sum(characters),0) chars FROM chapters WHERE book=? AND ordinal<?', row.id, row.currentOrdinal)
+          row.percent = row.totalChars > 0 ? Math.min(100, Math.round(((prior?.chars ?? 0) / row.totalChars) * 100)) : Math.round(((row.currentOrdinal - 1) / row.chapters) * 100)
+        } else {
+          row.percent = 0
+        }
+        row.currentChapterId = row.currentChapterId ?? null
+        row.currentChapterTitle = row.currentChapterTitle ?? null
+        row.currentOrdinal = row.currentOrdinal ?? null
+        delete row.totalChars
+      }
       return { books, total: total?.total ?? 0 }
     },
+    recentListeningBook: () => command('recentListeningBook', {}, 'read'),
+    chapterReadingContext: args => command('chapterReadingContext', args, 'read'),
+    searchBookContent: args => command('searchBookContent', args, 'read'),
+    locateChapterPosition: args => command('locateChapterPosition', args, 'read'),
     // Chapters of one book with their audio: complete = a finished generate job
     // for the current text; partial = some audio; none.
     async toolChapters(book, offset = 0, q = '') {

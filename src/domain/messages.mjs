@@ -66,7 +66,7 @@ export const messages = {
   AUDIO_IN_USE: '该音频正在下载，下载结束后可清理。',
   BOOK_EXPORTING: '这本书正在导出，请等导出完成或取消后再删除。',
   TEXT_TOO_LONG: '这一章正文过长，请拆成几章。',
-  IMPORT_TYPE_INVALID: '请选择 TXT、EPUB 或 PDF 电子书。',
+  IMPORT_TYPE_INVALID: '请选择 TXT、EPUB、PDF、MD、DOCX 或 HTML 电子书/文档。',
   IMPORT_TOO_LARGE: '文件大小、EPUB 解压容量或 PDF 内容超过上限，请先分卷。',
   IMPORT_TOO_MANY_CHAPTERS: '章节数量超过 5,000 章，请先分卷。',
   IMPORT_ENCODING_INVALID: '无法按当前编码解码，请检查源文件，或转为 UTF-8。',
@@ -84,6 +84,12 @@ export const messages = {
   PDF_ENCRYPTED: '这本 PDF 需要密码才能打开，暂不支持加密 PDF。',
   PDF_NO_TEXT: '这本 PDF 没有可提取的正文（可能是扫描版或纯图片），请先转为文字版、TXT 或 EPUB 后导入。',
   PDF_ENCODING_INVALID: '无法读取这本 PDF 的文字编码，请重新导出或转为 TXT / EPUB 后导入。',
+  DOCX_INVALID: '无法打开这个 DOCX 文档，文件可能已损坏或结构无效。',
+  DOCX_ENCRYPTED: '这个 DOCX 文档已加密，请解密后再导入。',
+  NOTE_NOT_FOUND: '这条批注已不存在。',
+  NOTES_LIMIT: '这本书的批注数量已达 5,000 条上限，请清理后再添加。',
+  NOTES_RATE_LIMIT: '本会话添加批注过于频繁，请稍后再试或直接在工作台记录。',
+  EXCERPT_TOO_LONG: '高光片段一次最多导出 90 秒或 60 段，请缩小选区范围。',
   ATTACHMENTS_UNAVAILABLE: '当前会话无法读取附件，请改用文本输入或粘贴正文。',
   AUDIO_MISSING: '这段音频已不存在，请重新生成。',
   BOOK_NOT_FOUND: '这本书已不在书架中，请刷新书架。',
@@ -156,6 +162,8 @@ export const messages = {
   SAMPLE_BOOK_INVALID: '内置示例书籍数据无效。',
   SAMPLE_AUDIO_INCOMPLETE: '内置示例音频分段不完整。',
   SAMPLE_AUDIO_INVALID: '内置示例音频格式无效。',
+  UPDATE_CHECK_FAILED: '暂时查不到最新版本，请检查网络后再试。',
+  UPDATE_MANUAL_REQUIRED: '请在完全退出 DSH 后，使用终端命令完成更新。',
 }
 
 export function messageFor(code) {

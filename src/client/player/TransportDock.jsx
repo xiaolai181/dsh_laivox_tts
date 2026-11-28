@@ -15,7 +15,7 @@ function newerLabel(newer) {
   if (newer.state === 'paused') return t('新版已暂停 {done}/{total}', { done: newer.done, total: newer.total })
   return t('新版制作中 {done}/{total} · 听新版进度', { done: newer.done, total: newer.total })
 }
-export function TransportDock({ player, chapter, view, refresh, listenOlder, notify, jumpBookmark, clearAudio, listenFrom, clearListen }) {
+export function TransportDock({ player, chapter, view, refresh, listenOlder, notify, jumpBookmark, clearAudio, listenFrom, clearListen, openNotes, askAi }) {
   const s=useSyncExternalStore(player.subscribe,player.getSnapshot)
   const [now,setNow]=useState(Date.now())
   useEffect(()=>{if(!s.sleep?.until)return;setNow(Date.now());const timer=setInterval(()=>setNow(Date.now()),1000);return ()=>clearInterval(timer)},[s.sleep?.until])
@@ -57,7 +57,35 @@ export function TransportDock({ player, chapter, view, refresh, listenOlder, not
         <div className="lv-wide-control"><Popover label={t("音量")} trigger={<Icon name="Volume2"/>}><input aria-label={t("音量")} type="range" min="0" max="1" step=".05" value={s.volume} onChange={e=>player.volume(Number(e.target.value))}/></Popover></div>
         <Popover label={t("更多")} trigger={<Icon name="Ellipsis"/>}><div className="lv-menu"><div className="lv-narrow-control">{timer}<label>{t("音量")}<input aria-label={t("音量")} type="range" min="0" max="1" step=".05" value={s.volume} onChange={e=>player.volume(Number(e.target.value))}/></label></div>
           <button disabled={!s.segments[s.n]?.ready} onClick={()=>player.bookmark()}>{t("保存书签")}</button>{jumpBookmark && <button onClick={jumpBookmark}>{t("跳到书签")}</button>}
-          {all && ['wav','mp3'].map(format=><button key={format} disabled={preparing(format)} onClick={()=>void download(format)}>{preparing(format)?downloadLabel(downloads.get(downloadKey(s.job,format))):format==='wav'?t("下载 WAV"):t("下载 MP3")}</button>)}{clearAudio && <button onClick={clearAudio}>{t("清理本章音频")}</button>}</div></Popover>
+          {chapter && !chapter.isSnippet && openNotes && <button onClick={() => {
+            const cur = s.segments[s.n]
+            const roleName = cur?.roleId && cur.roleId !== 'narrator' ? (chapter.roles?.find(r => r.id === cur.roleId)?.name ?? '') : t('旁白')
+            const quote = cur?.text ?? (cur ? chapter.text.slice(cur.start ?? 0, cur.end ?? 0) : chapter.text.slice(0, 120))
+            openNotes({
+              book: chapter.book,
+              bookTitle: chapter.bookTitle,
+              draft: quote.trim() ? {
+                chapter: chapter.id,
+                chapterTitle: chapter.title,
+                ordinal: chapter.ordinal,
+                partIndex: s.n ?? 0,
+                charOffset: cur?.start ?? 0,
+                quote: quote.trim().slice(0, 2000),
+                speaker: roleName,
+              } : null,
+            })
+          }}>{t("收藏此句 / 记批注")}</button>}
+          {chapter && !chapter.isSnippet && openNotes && <button onClick={() => openNotes({ book: chapter.book, bookTitle: chapter.bookTitle })}>{t("查看本书批注")}</button>}
+          {chapter && askAi && <button onClick={() => {
+            const cur = s.segments[s.n]
+            const roleName = cur?.roleId && cur.roleId !== 'narrator' ? (chapter.roles?.find(r => r.id === cur.roleId)?.name ?? '') : t('旁白')
+            const quote = cur?.text ?? (cur ? chapter.text.slice(cur.start ?? 0, cur.end ?? 0) : chapter.text.slice(0, 120))
+            if (!quote.trim()) return
+            askAi({ bookTitle: chapter.bookTitle, ordinal: chapter.ordinal, chapterTitle: chapter.title, speaker: roleName, quote: quote.trim().slice(0, 400) })
+          }}>{t("问 AI 这一段")}</button>}
+          {all && ['wav','mp3'].map(format=><button key={format} disabled={preparing(format)} onClick={()=>void download(format)}>{preparing(format)?downloadLabel(downloads.get(downloadKey(s.job,format))):format==='wav'?t("下载 WAV"):t("下载 MP3")}</button>)}
+          {all && ['srt','lrc'].map(format=><button key={format} disabled={preparing(format)} onClick={()=>void download(format)}>{format==='srt'?t("导出 SRT 字幕"):t("导出 LRC 字幕")}</button>)}
+          {clearAudio && <button onClick={clearAudio}>{t("清理本章音频")}</button>}</div></Popover>
       </div>
     </div>
     {s.saveMessage && <small role={s.saveFailed?'alert':'status'}>{t(s.saveMessage)}{s.saveFailed&&!s.saveMessage.includes('其他窗口')&&<button onClick={()=>player.retrySave()}>{t("重试")}</button>}</small>}

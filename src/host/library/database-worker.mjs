@@ -11,12 +11,14 @@ import { retentionCutoff } from '../snippets.mjs'
 import { ROLE_AGES, VOICE_RULE_LATEST } from '../../domain/voice-assignment.mjs'
 import { SAMPLE_MIGRATION_PREFIX } from '../../domain/samples.mjs'
 import { completeAudioJobWhere } from './complete-job-sql.mjs'
+import { buildPreviewExcerpt, computeProgressPercent, extractSpeakerLines, matchChapterByQuery, matchRoleIds, resolvePlaybackCutoff } from '../../domain/companion.mjs'
+import { BOOK_NOTES_LIMIT, NOTE_BODY_LIMIT, NOTE_QUOTE_LIMIT, NOTE_SPEAKER_LIMIT } from '../../domain/notes.mjs'
 
 const db = new DatabaseSync(workerData)
 db.exec('PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=4000')
 db.exec('BEGIN IMMEDIATE')
 const version = db.prepare('PRAGMA user_version').get().user_version
-if (version > 12) throw new Error('LIBRARY_VERSION_UNSUPPORTED')
+if (version > 13) throw new Error('LIBRARY_VERSION_UNSUPPORTED')
 if (!version) db.exec([
   'CREATE TABLE IF NOT EXISTS books(id TEXT PRIMARY KEY,title TEXT NOT NULL,fingerprint TEXT,created INTEGER NOT NULL)',
   'CREATE INDEX IF NOT EXISTS books_fingerprint ON books(fingerprint)',
@@ -118,6 +120,27 @@ if (version < 12) {
   if (!names.includes('trim_start')) db.exec('ALTER TABLE audio ADD COLUMN trim_start INTEGER')
   if (!names.includes('write_id')) db.exec('ALTER TABLE audio ADD COLUMN write_id TEXT')
   db.exec('PRAGMA user_version=12')
+}
+// v13: listening notes & highlighted quotes, cascaded with books/chapters
+// without pinning stale audio.
+if (version < 13) {
+  db.exec([
+    `CREATE TABLE IF NOT EXISTS notes(
+      id TEXT PRIMARY KEY,
+      book TEXT NOT NULL REFERENCES books ON DELETE CASCADE,
+      chapter TEXT NOT NULL REFERENCES chapters ON DELETE CASCADE,
+      part_index INTEGER NOT NULL DEFAULT 0,
+      char_offset INTEGER NOT NULL DEFAULT 0,
+      quote TEXT NOT NULL,
+      speaker TEXT NOT NULL DEFAULT '',
+      body TEXT NOT NULL DEFAULT '',
+      created INTEGER NOT NULL,
+      updated INTEGER NOT NULL
+    )`,
+    'CREATE INDEX IF NOT EXISTS notes_book ON notes(book, created DESC)',
+    'CREATE INDEX IF NOT EXISTS notes_chapter ON notes(chapter, char_offset)',
+    'PRAGMA user_version=13',
+  ].join(';'))
 }
 db.exec('COMMIT')
 
@@ -278,6 +301,7 @@ function deleteBook({ book } = {}) {
   if (active) throw fault('JOBS_ACTIVE', { book, total: active })
   const stats = bookStats(book)
   run('DELETE FROM published_imports WHERE id=?', book)
+  run("DELETE FROM operations WHERE kind='import-append' AND json_extract(result,'$.book')=?", book)
   run('DELETE FROM books WHERE id=?', book)
   return stats
 }
@@ -571,6 +595,381 @@ function estimateGroup({ ids, input, cleanWindow, castWindow }) {
   return estimated
 }
 
+function progressStateForBook(bookId) {
+  const chapters = all('SELECT id,ordinal,title,characters FROM chapters WHERE book=? ORDER BY ordinal', bookId)
+  const latest = get(`SELECT c.id,c.ordinal,c.title,c.text,c.editorial,c.playback
+    FROM chapters c WHERE c.book=? AND c.playback IS NOT NULL
+    ORDER BY coalesce(json_extract(c.playback,'$.at'),0) DESC, c.ordinal DESC LIMIT 1`, bookId)
+  if (!latest) return { chapters, progressRow: null, progressOrdinal: 0, cutoff: 0, percent: 0 }
+  const playback = parse(latest.playback)
+  let jobParts = null
+  if (typeof playback?.job === 'string' && playback.job) {
+    const jobRow = get('SELECT progress FROM jobs WHERE id=? AND chapter=?', playback.job, latest.id)
+    jobParts = parse(jobRow?.progress)?.parts ?? null
+  }
+  const cutoff = resolvePlaybackCutoff(latest.text, playback, parse(latest.editorial), jobParts)
+  const percent = computeProgressPercent(chapters, latest.ordinal, cutoff, latest.text.length)
+  return { chapters, progressRow: latest, progressOrdinal: latest.ordinal, cutoff, percent, jobParts }
+}
+
+function recentListeningBook() {
+  const row = get(`SELECT b.id,b.title,c.id currentChapterId,c.title currentChapterTitle,c.ordinal currentOrdinal
+    FROM chapters c JOIN books b ON b.id=c.book
+    WHERE c.playback IS NOT NULL AND NOT EXISTS(SELECT 1 FROM chat_readings WHERE book=b.id)
+    ORDER BY coalesce(json_extract(c.playback,'$.at'),0) DESC, b.created DESC, c.ordinal DESC LIMIT 1`)
+  if (row) {
+    const { percent } = progressStateForBook(row.id)
+    return { ...row, percent }
+  }
+  const fallback = get(`SELECT b.id,b.title FROM books b
+    WHERE NOT EXISTS(SELECT 1 FROM chat_readings WHERE book=b.id)
+    ORDER BY b.created DESC, b.id LIMIT 1`)
+  return fallback ? { ...fallback, currentChapterId: null, currentChapterTitle: null, currentOrdinal: null, percent: 0 } : null
+}
+
+function resolveBookTarget(bookId) {
+  const id = typeof bookId === 'string' && bookId.trim() ? bookId.trim() : recentListeningBook()?.id
+  if (!id) throw fault('BOOK_NOT_FOUND')
+  const book = get('SELECT id,title FROM books b WHERE id=? AND NOT EXISTS(SELECT 1 FROM chat_readings WHERE book=b.id)', id)
+  if (!book) throw fault('BOOK_NOT_FOUND')
+  return book
+}
+
+function rolesForBook(bookId) {
+  return all('SELECT id,name,gender,age FROM roles WHERE book=? ORDER BY rowid', bookId)
+}
+
+function chapterReadingContext({ book, chapter, mode = 'recent', limit = 3000, allowSpoilers = false } = {}) {
+  const targetBook = resolveBookTarget(book)
+  const cap = Math.min(12000, Math.max(200, Number.isSafeInteger(limit) ? limit : 3000))
+  const state = progressStateForBook(targetBook.id)
+  if (!state.chapters.length) throw fault('CHAPTER_NOT_FOUND')
+  const roles = rolesForBook(targetBook.id)
+  const roleMap = new Map(roles.map(role => [role.id, role]))
+  const hasExplicitChapter = typeof chapter === 'string' && chapter.trim() !== ''
+  const useChapter = hasExplicitChapter ? matchChapterByQuery(state.chapters, chapter) : null
+  if (hasExplicitChapter && !useChapter) throw fault('CHAPTER_NOT_FOUND')
+  const targetMeta = (mode === 'chapter' || hasExplicitChapter) && useChapter
+    ? useChapter
+    : state.chapters.find(row => row.ordinal === state.progressOrdinal) ?? state.chapters[0]
+  const target = get('SELECT id,ordinal,title,text,editorial,playback FROM chapters WHERE id=?', targetMeta.id)
+  if (!target) throw fault('CHAPTER_NOT_FOUND')
+  const spoilerAhead = !allowSpoilers && (
+    (state.progressOrdinal > 0 && target.ordinal > state.progressOrdinal) ||
+    (state.progressOrdinal === 0 && target.ordinal > 1)
+  )
+  if (spoilerAhead) {
+    return {
+      spoilerBlocked: true,
+      book: targetBook.id,
+      bookTitle: targetBook.title,
+      chapter: target.id,
+      chapterTitle: target.title,
+      ordinal: target.ordinal,
+      progressOrdinal: state.progressOrdinal,
+      progressTitle: state.progressRow?.title ?? null,
+      percent: state.percent,
+      roles,
+    }
+  }
+  const editorial = parse(target.editorial)
+  let maxEnd = target.text.length
+  if (!allowSpoilers) {
+    if (state.progressOrdinal > 0 && target.ordinal === state.progressOrdinal) maxEnd = state.cutoff
+    else if (state.progressOrdinal === 0 && target.ordinal === 1) maxEnd = Math.min(target.text.length, Math.min(cap, 400))
+  }
+  const within = target.text.slice(0, maxEnd)
+  const excerpt = within.length > cap ? within.slice(within.length - cap) : within
+  let previousExcerpt = ''
+  if (excerpt.length < cap && target.ordinal > 1) {
+    const prevMeta = state.chapters.find(row => row.ordinal === target.ordinal - 1)
+    if (prevMeta) {
+      const prevRow = get('SELECT title,text FROM chapters WHERE id=?', prevMeta.id)
+      const remain = cap - excerpt.length
+      if (prevRow?.text) previousExcerpt = prevRow.text.slice(Math.max(0, prevRow.text.length - remain))
+    }
+  }
+  let speakerLines = []
+  if (maxEnd > 0) {
+    if (editorial) {
+      speakerLines = extractSpeakerLines(target.text, editorial, roleMap, maxEnd, 80)
+    } else {
+      const jobRow = get(`SELECT j.progress FROM jobs j WHERE ${completeAudioJobWhere} ORDER BY j.created DESC,j.rowid DESC LIMIT 1`, target.id)
+      const parts = parse(jobRow?.progress)?.parts ?? []
+      speakerLines = parts.filter(p => Number.isFinite(p.start) && p.start < maxEnd).slice(0, 80).flatMap(p => {
+        const end = Number.isFinite(p.end) ? Math.min(p.end, maxEnd) : maxEnd
+        const maxLen = Math.max(0, end - p.start)
+        const slice = end > p.start ? target.text.slice(p.start, end).trim() : ''
+        const text = slice || String(p.text ?? '').slice(0, maxLen).trim()
+        if (!text) return []
+        return [{
+          id: p.id, start: p.start, end,
+          roleId: p.roleId ?? 'narrator',
+          speaker: roleMap.get(p.roleId)?.name ?? (p.roleId === 'narrator' || !p.roleId ? '旁白' : p.roleId),
+          emotion: p.emotion ?? 'neutral',
+          text,
+        }]
+      })
+    }
+  }
+  return {
+    spoilerBlocked: false,
+    book: targetBook.id,
+    bookTitle: targetBook.title,
+    chapter: target.id,
+    chapterTitle: target.title,
+    ordinal: target.ordinal,
+    progressOrdinal: state.progressOrdinal,
+    progressTitle: state.progressRow?.title ?? null,
+    percent: state.percent,
+    hasStarted: state.progressOrdinal > 0,
+    truncatedToOffset: maxEnd,
+    excerpt,
+    previousExcerpt,
+    speakerLines,
+    roles,
+  }
+}
+
+function searchBookContent({ book, query = '', roleName = '', limit = 40, allowSpoilers = false } = {}) {
+  const targetBook = resolveBookTarget(book)
+  const cleanQuery = typeof query === 'string' ? query.trim() : ''
+  const cleanRole = typeof roleName === 'string' ? roleName.trim() : ''
+  if (!cleanQuery && !cleanRole) throw fault('INVALID_INPUT')
+  const capLimit = Math.min(40, Math.max(1, Number.isSafeInteger(limit) ? limit : 40))
+  const state = progressStateForBook(targetBook.id)
+  const roles = rolesForBook(targetBook.id)
+  const roleMap = new Map(roles.map(role => [role.id, role]))
+  const matchedRoles = cleanRole ? matchRoleIds(roles, cleanRole) : null
+  const roleNeedles = matchedRoles ? [...matchedRoles].map(id => `"roleId":${JSON.stringify(id)}`) : []
+  const needleLower = cleanQuery.toLowerCase()
+  const hits = []
+  let totalChars = 0
+  const stmt = db.prepare('SELECT id,ordinal,title,text,editorial FROM chapters WHERE book=? ORDER BY ordinal')
+  for (const row of stmt.iterate(targetBook.id)) {
+    if (hits.length >= capLimit || totalChars >= 12000) break
+    const isAhead = offset => state.progressOrdinal === 0 ? row.ordinal > 1
+      : (row.ordinal > state.progressOrdinal || (row.ordinal === state.progressOrdinal && offset >= state.cutoff))
+    if (cleanRole) {
+      let matchedAnySpeaker = false
+      if (row.editorial && roleNeedles.some(needle => row.editorial.includes(needle))) {
+        matchedAnySpeaker = true
+        const editorial = parse(row.editorial)
+        const lines = extractSpeakerLines(row.text, editorial, roleMap, row.text.length, 500)
+        for (const line of lines) {
+          if (!matchedRoles.has(line.roleId)) continue
+          if (cleanQuery && !line.text.toLowerCase().includes(needleLower)) continue
+          const ahead = isAhead(line.start)
+          const excerpt = !allowSpoilers && ahead ? '' : line.text.slice(0, 200)
+          hits.push({ chapterId: row.id, ordinal: row.ordinal, chapterTitle: row.title, start: line.start, speaker: line.speaker, excerpt, aheadOfProgress: ahead })
+          totalChars += excerpt.length
+          if (hits.length >= capLimit || totalChars >= 12000) break
+        }
+      }
+      if (!matchedAnySpeaker && !cleanQuery && row.text.includes(cleanRole)) {
+        const idx = row.text.indexOf(cleanRole)
+        const ahead = isAhead(idx)
+        const excerpt = !allowSpoilers && ahead ? '' : buildPreviewExcerpt(row.text, idx, 60)
+        hits.push({ chapterId: row.id, ordinal: row.ordinal, chapterTitle: row.title, start: idx, speaker: cleanRole, excerpt, aheadOfProgress: ahead })
+        totalChars += excerpt.length
+      }
+      continue
+    }
+    const lowerText = row.text.toLowerCase()
+    const idx = lowerText.indexOf(needleLower)
+    if (idx < 0) continue
+    let speaker = null
+    if (row.editorial) {
+      const editorial = parse(row.editorial)
+      const lines = extractSpeakerLines(row.text, editorial, roleMap, row.text.length, 500)
+      const hitLine = lines.find(line => idx >= line.start && idx < line.end)
+      if (hitLine) speaker = hitLine.speaker
+    }
+    const ahead = isAhead(idx)
+    const excerpt = !allowSpoilers && ahead ? '' : buildPreviewExcerpt(row.text, idx, 60)
+    hits.push({ chapterId: row.id, ordinal: row.ordinal, chapterTitle: row.title, start: idx, speaker, excerpt, aheadOfProgress: ahead })
+    totalChars += excerpt.length
+  }
+  return { book: targetBook.id, bookTitle: targetBook.title, progressOrdinal: state.progressOrdinal, percent: state.percent, hits, totalHits: hits.length }
+}
+
+function locateChapterPosition({ book, chapter, query } = {}) {
+  const targetBook = resolveBookTarget(book)
+  const chapters = all('SELECT id,ordinal,title FROM chapters WHERE book=? ORDER BY ordinal', targetBook.id)
+  if (!chapters.length) throw fault('CHAPTER_NOT_FOUND')
+  const cleanChapter = typeof chapter === 'string' ? chapter.trim() : ''
+  const cleanQuery = typeof query === 'string' ? query.trim() : ''
+  let targetMeta = cleanChapter ? matchChapterByQuery(chapters, cleanChapter) : null
+  if (cleanChapter && !targetMeta) throw fault('CHAPTER_NOT_FOUND')
+  let start = 0
+  let preview = ''
+  if (targetMeta) {
+    const row = get('SELECT id,ordinal,title,text FROM chapters WHERE id=?', targetMeta.id)
+    if (cleanQuery) {
+      const idx = row.text.toLowerCase().indexOf(cleanQuery.toLowerCase())
+      if (idx >= 0) start = idx
+    }
+    preview = buildPreviewExcerpt(row.text, start, 60)
+    return { book: targetBook.id, bookTitle: targetBook.title, chapter: row.id, chapterTitle: row.title, ordinal: row.ordinal, start, preview }
+  }
+  if (cleanQuery) {
+    const needle = cleanQuery.toLowerCase()
+    const stmt = db.prepare('SELECT id,ordinal,title,text FROM chapters WHERE book=? ORDER BY ordinal')
+    for (const row of stmt.iterate(targetBook.id)) {
+      const idx = row.text.toLowerCase().indexOf(needle)
+      if (idx >= 0) {
+        return { book: targetBook.id, bookTitle: targetBook.title, chapter: row.id, chapterTitle: row.title, ordinal: row.ordinal, start: idx, preview: buildPreviewExcerpt(row.text, idx, 60) }
+      }
+    }
+    throw fault('CHAPTER_NOT_FOUND')
+  }
+  const state = progressStateForBook(targetBook.id)
+  const currentMeta = state.chapters.find(row => row.ordinal === state.progressOrdinal) ?? chapters[0]
+  const row = get('SELECT id,ordinal,title,text FROM chapters WHERE id=?', currentMeta.id)
+  return { book: targetBook.id, bookTitle: targetBook.title, chapter: row.id, chapterTitle: row.title, ordinal: row.ordinal, start: 0, preview: buildPreviewExcerpt(row.text, 0, 60) }
+}
+
+const normImportKey = value => String(value ?? '').normalize('NFKC').replace(/\s+/gu, '').toLowerCase()
+const textDigest = value => createHash('sha256').update(String(value ?? '').trimEnd()).digest('hex')
+
+function findRelatedBook({ fingerprint, title, chapters } = {}) {
+  if (fingerprint && get('SELECT id FROM books WHERE fingerprint=? LIMIT 1', fingerprint)) return null
+  if (!Array.isArray(chapters) || !chapters.length) return null
+  const sample = chapters.slice(0, 3).map(ch => ({
+    title: normImportKey(ch.title),
+    lead: normImportKey(String(ch.text ?? '').slice(0, 80)),
+  }))
+  const targetTitle = normImportKey(title)
+  const candidates = all(`SELECT id,title FROM books b
+    WHERE NOT EXISTS(SELECT 1 FROM chat_readings WHERE book=b.id)
+    ORDER BY created DESC, id LIMIT 200`)
+  for (const cand of candidates) {
+    const firstRows = all('SELECT title,text FROM chapters WHERE book=? ORDER BY ordinal LIMIT 3', cand.id)
+    if (!firstRows.length) continue
+    let headMatches = 0
+    for (let i = 0; i < Math.min(firstRows.length, sample.length); i++) {
+      const a = normImportKey(firstRows[i].title)
+      const b = sample[i].title
+      const leadA = normImportKey(String(firstRows[i].text ?? '').slice(0, 80))
+      const leadB = sample[i].lead
+      if (a && a === b && (!leadA || !leadB || leadA.slice(0, 40) === leadB.slice(0, 40))) headMatches++
+    }
+    const candTitle = normImportKey(cand.title)
+    const titleRelated = Boolean(targetTitle && candTitle && (candTitle === targetTitle || candTitle.includes(targetTitle) || targetTitle.includes(candTitle)))
+    const requiredHeads = Math.min(firstRows.length, sample.length, 2)
+    if (headMatches < requiredHeads && !(titleRelated && headMatches >= 1)) continue
+    const existingRows = all('SELECT title,text FROM chapters WHERE book=?', cand.id)
+    const existingKeys = new Set(existingRows.map(r => r.title + '|' + textDigest(r.text)))
+    const seen = new Set()
+    let newCount = 0
+    for (const ch of chapters) {
+      const k = ch.title + '|' + textDigest(ch.text)
+      if (!existingKeys.has(k) && !seen.has(k)) {
+        seen.add(k)
+        newCount++
+      }
+    }
+    if (newCount > 0) {
+      return { id: cand.id, title: cand.title, existingChapters: existingRows.length, newChaptersCount: newCount }
+    }
+  }
+  return null
+}
+
+function mergeBookChapters({ id, session, targetBook, chapters } = {}) {
+  if (typeof id !== 'string' || !id || typeof targetBook !== 'string' || !targetBook || !Array.isArray(chapters)) throw fault('INVALID_INPUT')
+  const draft = get('SELECT session FROM imports WHERE id=?', id)
+  if (!draft || draft.session !== (session ?? null)) throw fault('IMPORT_NOT_FOUND')
+  const book = get('SELECT id,title,EXISTS(SELECT 1 FROM chat_readings WHERE book=b.id) snippet FROM books b WHERE id=?', targetBook)
+  if (!book) throw fault('BOOK_NOT_FOUND')
+  if (book.snippet) throw fault('INVALID_INPUT')
+  const existingRows = all('SELECT title,text FROM chapters WHERE book=?', targetBook)
+  const existingKeys = new Set(existingRows.map(r => r.title + '|' + textDigest(r.text)))
+  const seen = new Set()
+  const toAdd = []
+  for (const ch of chapters) {
+    const k = ch.title + '|' + textDigest(ch.text)
+    if (existingKeys.has(k) || seen.has(k)) continue
+    seen.add(k)
+    toAdd.push(ch)
+  }
+  if (existingRows.length + toAdd.length > 5000) throw fault('IMPORT_TOO_MANY_CHAPTERS')
+  const appended = toAdd.length ? appendChapters({ book: targetBook, chapters: toAdd }) : { added: [], skipped: 0 }
+  run('DELETE FROM imports WHERE id=?', id)
+  run('INSERT INTO published_imports VALUES(?,?)', id, session ?? null)
+  run('INSERT OR REPLACE INTO operations(id,kind,digest,result,created) VALUES(?,?,?,?,?)',
+    'import-target:' + id, 'import-append', session ?? '', json({ book: targetBook }), Date.now())
+  return { id: targetBook, added: appended.added.length, skipped: chapters.length - toAdd.length, appended: true }
+}
+
+const noteProjection = `SELECT n.id,n.book,n.chapter,n.part_index partIndex,n.char_offset charOffset,n.quote,n.speaker,n.body,n.created,n.updated,
+  c.title chapterTitle,c.ordinal,b.title bookTitle
+  FROM notes n JOIN chapters c ON c.id=n.chapter JOIN books b ON b.id=n.book`
+
+function listNotes({ book, chapter, q = '', limit = 100, offset = 0 } = {}) {
+  const scope = []
+  const args = []
+  if (typeof book === 'string' && book.trim()) { scope.push('n.book=?'); args.push(book.trim()) }
+  if (typeof chapter === 'string' && chapter.trim()) { scope.push('n.chapter=?'); args.push(chapter.trim()) }
+  const cleanQ = typeof q === 'string' ? q.trim() : ''
+  if (cleanQ) {
+    const pattern = '%' + cleanQ.replace(/[\\%_]/gu, '\\$&') + '%'
+    scope.push("(n.quote LIKE ? ESCAPE '\\' OR n.body LIKE ? ESCAPE '\\' OR n.speaker LIKE ? ESCAPE '\\')")
+    args.push(pattern, pattern, pattern)
+  }
+  const where = scope.length ? ' WHERE ' + scope.join(' AND ') : ''
+  const cap = Math.min(500, Math.max(1, Number.isSafeInteger(limit) ? limit : 100))
+  const off = Math.max(0, Number.isSafeInteger(offset) ? offset : 0)
+  const notes = all(noteProjection + where + ' ORDER BY n.created DESC, n.id LIMIT ? OFFSET ?', ...args, cap, off)
+  const total = get('SELECT count(*) total FROM notes n' + where, ...args)?.total ?? 0
+  return { notes, total }
+}
+
+function saveNote({ id, book, chapter, partIndex = 0, charOffset = 0, quote, speaker = '', body = '' } = {}) {
+  const now = Date.now()
+  if (typeof id === 'string' && id.trim()) {
+    const noteId = id.trim()
+    const existing = get('SELECT * FROM notes WHERE id=?', noteId)
+    if (!existing) throw fault('NOTE_NOT_FOUND')
+    const nextQuote = quote !== undefined ? String(quote ?? '').trim() : existing.quote
+    const nextBody = body !== undefined ? String(body ?? '').trim() : existing.body
+    const nextSpeaker = speaker !== undefined ? String(speaker ?? '').trim() : existing.speaker
+    if (!nextQuote || [...nextQuote].length > NOTE_QUOTE_LIMIT || [...nextBody].length > NOTE_BODY_LIMIT || [...nextSpeaker].length > NOTE_SPEAKER_LIMIT) {
+      throw fault('INVALID_INPUT')
+    }
+    run('UPDATE notes SET quote=?,speaker=?,body=?,updated=? WHERE id=?', nextQuote, nextSpeaker, nextBody, now, noteId)
+    return get(noteProjection + ' WHERE n.id=?', noteId)
+  }
+  if (typeof chapter !== 'string' || !chapter.trim()) throw fault('INVALID_INPUT')
+  const chapRow = get(`SELECT c.id,c.book,EXISTS(SELECT 1 FROM chat_readings WHERE book=c.book) snippet
+    FROM chapters c WHERE c.id=?`, chapter.trim())
+  if (!chapRow) throw fault('CHAPTER_NOT_FOUND')
+  if (chapRow.snippet) throw fault('INVALID_INPUT')
+  if (typeof book === 'string' && book.trim() && book.trim() !== chapRow.book) throw fault('BOOK_NOT_FOUND')
+  const cleanQuote = typeof quote === 'string' ? quote.trim() : ''
+  const cleanBody = typeof body === 'string' ? body.trim() : ''
+  const cleanSpeaker = typeof speaker === 'string' ? speaker.trim() : ''
+  if (!cleanQuote || [...cleanQuote].length > NOTE_QUOTE_LIMIT || [...cleanBody].length > NOTE_BODY_LIMIT || [...cleanSpeaker].length > NOTE_SPEAKER_LIMIT) {
+    throw fault('INVALID_INPUT')
+  }
+  const part = Number.isSafeInteger(partIndex) && partIndex >= 0 ? partIndex : 0
+  const offset = Number.isSafeInteger(charOffset) && charOffset >= 0 ? charOffset : 0
+  const count = get('SELECT count(*) total FROM notes WHERE book=?', chapRow.book)?.total ?? 0
+  if (count >= BOOK_NOTES_LIMIT) throw fault('NOTES_LIMIT')
+  const noteId = randomUUID()
+  run('INSERT INTO notes(id,book,chapter,part_index,char_offset,quote,speaker,body,created,updated) VALUES(?,?,?,?,?,?,?,?,?,?)',
+    noteId, chapRow.book, chapRow.id, part, offset, cleanQuote, cleanSpeaker, cleanBody, now, now)
+  return get(noteProjection + ' WHERE n.id=?', noteId)
+}
+
+function deleteNote({ id } = {}) {
+  if (typeof id !== 'string' || !id.trim()) throw fault('INVALID_INPUT')
+  const noteId = id.trim()
+  const { changes } = run('DELETE FROM notes WHERE id=?', noteId)
+  if (!changes) throw fault('NOTE_NOT_FOUND')
+  return { id: noteId, deleted: true }
+}
+
 parentPort.on('message', ({ id, statements, transaction, close, command, args, receipt }) => {
   try {
     if (close) { db.close(); parentPort.postMessage({ id }); parentPort.close(); return }
@@ -610,6 +1009,15 @@ parentPort.on('message', ({ id, statements, transaction, close, command, args, r
     else if (command === 'clearKeyMeta') value = clearKeyMeta()
     else if (command === 'sampleSeedState') value = sampleSeedState()
     else if (command === 'seedSamples') value = seedSamples(args)
+    else if (command === 'recentListeningBook') value = recentListeningBook()
+    else if (command === 'chapterReadingContext') value = chapterReadingContext(args)
+    else if (command === 'searchBookContent') value = searchBookContent(args)
+    else if (command === 'locateChapterPosition') value = locateChapterPosition(args)
+    else if (command === 'findRelatedBook') value = findRelatedBook(args)
+    else if (command === 'mergeBookChapters') value = mergeBookChapters(args)
+    else if (command === 'listNotes') value = listNotes(args)
+    else if (command === 'saveNote') value = saveNote(args)
+    else if (command === 'deleteNote') value = deleteNote(args)
     else value = statements.map(({ sql, args, mode, expect }) => {
       const result = db.prepare(sql)[mode](...args)
       if (expect !== undefined && result.changes !== expect) throw new Error('VERSION_CONFLICT')

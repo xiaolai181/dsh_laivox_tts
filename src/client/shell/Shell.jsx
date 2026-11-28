@@ -11,6 +11,7 @@ import { SHELF_SPLIT_WIDTH, shelfMode, shouldLoadShelfChapters } from '../librar
 import { SnippetsView } from '../library/SnippetsView.jsx'
 import { QueueSheet } from '../sheets/QueueSheet.jsx'
 import { SettingsSheet } from '../sheets/SettingsSheet.jsx'
+import { NotesSheet } from '../sheets/NotesSheet.jsx'
 import { jobActive } from '../jobs/JobProgress.jsx'
 import { TransportDock } from '../player/TransportDock.jsx'
 import { shortcutAction, stepRate } from '../player/shortcuts.mjs'
@@ -51,7 +52,7 @@ function useResults(path, scope, size, initialOffset, version, query) {
     next: count === size ? () => setOffset(offset + size) : undefined }
 }
 
-export function Shell({ player, navigation, memory, isPanelActive, useSessions }) {
+export function Shell({ player, navigation, memory, isPanelActive, useSessions, openConversation }) {
   const w = useWorkbench(player, navigation, memory)
   const { chapter, options, busy, panel, page } = w
   const scene = useScene(w, memory)
@@ -72,6 +73,20 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
   const selectingAll = useRef(null)
   const [theme, setTheme] = useState(null)
   const [activity, bumpActivity] = useState(0)
+  const [notesTarget, setNotesTarget] = useState(null)
+  const openNotes = target => { setNotesTarget(target); scene.openSheet('notes') }
+  function askAi(draft) {
+    if (!draft?.quote) return
+    const head = draft.bookTitle
+      ? `我正在听《${draft.bookTitle}》第 ${draft.ordinal ?? 1} 章《${draft.chapterTitle ?? ''}》`
+      : `我正在听《${draft.chapterTitle ?? '当前章节'}》`
+    const who = draft.speaker ? `（说话人：${draft.speaker}）` : ''
+    const prompt = `${head}${who}：“${draft.quote}”。请结合当前已听进度帮我解答或分析这段内容（如需更多前文请调用 laivox_reading_context，默认严守防剧透原则）。`
+    void navigator.clipboard?.writeText?.(prompt).catch(() => {})
+    try { window.dispatchEvent(new CustomEvent('laivox-ask-ai', { detail: { text: prompt } })) } catch {}
+    openConversation?.()
+    notify(deferText(() => t('已复制防剧透提问上下文，切回对话粘贴即可向 AI 提问')))
+  }
   const active = jobActive(chapter?.operation)
   const books = useResults('library/books', null, 40, 0, w.shelfVersion, booksQuery)
   const shelfBookId = shelfPick?.id ?? (!chapter?.isSnippet ? chapter?.book : null)
@@ -272,7 +287,7 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
     generateBatch={() => void w.generate('generate', true, '', { batchBook: shelfBookId })} disabled={busy}
     append={() => nav({ new: true, book: shelfBook.id, bookTitle: shelfBook.title })}
     exportState={w.exportState} exportFormat={w.exportFormat} setExportFormat={w.setExportFormat}
-    exportBook={w.exportBook} cancelExport={w.cancelExport} options={options} renameBook={async (id, title) => {
+    exportBook={w.exportBook} cancelExport={w.cancelExport} openBookNotes={openNotes} options={options} renameBook={async (id, title) => {
       const saved = await w.renameBook(id, title)
       if (saved) setShelfPick(current => current?.id === id ? { ...current, title: title.trim() } : current)
       return saved
@@ -320,7 +335,7 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
     event.preventDefault();actions[action]?.()
   }
   return <main ref={root} lang={getLanguage()} className="lv-ui lv-workbench" data-skin={appearance.skin} data-theme={appearance.theme} onKeyDown={keyDown} tabIndex={-1}>
-    <input ref={fileInput} type="file" hidden accept=".txt,.epub,.pdf" onChange={event=>{
+    <input ref={fileInput} type="file" hidden accept=".txt,.epub,.pdf,.md,.markdown,.docx,.html,.htm" onChange={event=>{
       const file=event.target.files[0];event.target.value='';if(file)void openImport(signal=>upload(file,signal))
     }}/>
     <TopBar chapter={chapter} draftBookTitle={w.appendBook?.title} books={books.value?.books} openBook={id=>nav({book:id})} scene={scene.scene} setScene={chooseScene} tasks={inProgress} openQueue={()=>openQueue()} openSettings={()=>scene.openSheet('settings')} openRail={()=>setShelfOpen(true)}/>
@@ -329,7 +344,7 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
       <div className="lv-scene-room">
         {w.error && !scene.sheet && scene.sheet !== 'settings' && <div className="lv-inline lv-error" role="alert">{w.error}{w.memory.activeId && !w.creationSaved && <button onClick={()=>w.reloadChapter().then(w.clearError).catch(w.errors)}>{t("重新加载")}</button>}</div>}
         {blockedActions()}
-        {scene.scene==='listen' && <StageScene w={w} player={player} immersive={scene.immersive} setImmersive={scene.setImmersive} navigate={id=>nav({chapter:id})} listenFrom={w.listenFrom} create={()=>nav({new:true})} openImport={()=>fileInput.current.click()} books={books.value?.books} openBook={id=>nav({book:id})} openLibrary={()=>chooseScene('library')}/>}
+        {scene.scene==='listen' && <StageScene w={w} player={player} immersive={scene.immersive} setImmersive={scene.setImmersive} navigate={id=>nav({chapter:id})} listenFrom={w.listenFrom} create={()=>nav({new:true})} openImport={()=>fileInput.current.click()} books={books.value?.books} openBook={id=>nav({book:id})} openLibrary={()=>chooseScene('library')} openNotes={openNotes} askAi={askAi}/>}
         {scene.scene==='studio' && <StudioScene w={w} player={player} tab={scene.studioTab} change={scene.setStudioTab} roleData={roleData} staleScript={staleScript} saveCreation={saveCreation} cancelCreation={cancelCreation} openQueue={()=>openQueue({chapter:chapter?.id})}/>}
         {scene.scene==='library' && <LibraryScene create={()=>nav({new:true})} creatingDisabled={busy} importFile={()=>fileInput.current.click()} uploading={uploading}
           tab={page==='import' && w.importEntry ? 'books' : scene.libraryTab} setTab={page==='import' && w.importEntry ? null : selectLibraryTab}
@@ -343,7 +358,7 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
       </div>
     </div>
     {!(scene.scene === 'library' || (scene.scene === 'studio' && w.creating)) && <SaveBar w={w} save={save}/>}
-    <TransportDock player={player} chapter={chapter} view={view} refresh={w.refresh} listenOlder={w.listenOlder} notify={notify} listenFrom={w.listenFrom} clearListen={w.clearListen} jumpBookmark={chapter?.playback?.bookmark?jumpBookmark:null} clearAudio={chapter?.media?.some(part=>part.ready)?()=>w.clearAudio({chapter:chapter.id}):null}/>
+    <TransportDock player={player} chapter={chapter} view={view} refresh={w.refresh} listenOlder={w.listenOlder} notify={notify} listenFrom={w.listenFrom} clearListen={w.clearListen} jumpBookmark={chapter?.playback?.bookmark?jumpBookmark:null} clearAudio={chapter?.media?.some(part=>part.ready)?()=>w.clearAudio({chapter:chapter.id}):null} openNotes={openNotes} askAi={askAi}/>
     <ToastRegion message={w.notice} onDismiss={w.clearNotice}/>
     {shelfOpen && width<1024 && <Overlay title={t("目录")} variant="shelf" close={()=>setShelfOpen(false)} {...appearance}>{rail}<button onClick={()=>{setShelfOpen(false);chooseScene('library')}}>{t("打开书架")}</button></Overlay>}
     {scene.sheet==='queue' && <Sheet title={t("任务")} close={closePanel}>
@@ -351,6 +366,7 @@ export function Shell({ player, navigation, memory, isPanelActive, useSessions }
         run={async(id,action)=>{const result=await w.jobAction(id,action);bumpActivity(n=>n+1);return result}} close={closePanel} open={(chapter,job)=>nav({chapter,job})} openStorage={()=>scene.openSheet('settings','storage')}/>
     </Sheet>}
     {scene.sheet==='settings' && <Sheet title={t("设置")} close={closePanel}>{w.error && <p role="alert">{w.error}</p>}<SettingsSheet focus={scene.focus} w={w} space={books.value?.space} player={player}/></Sheet>}
+    {scene.sheet==='notes' && notesTarget?.book && <Sheet title={t("听书批注")} close={closePanel}><NotesSheet book={notesTarget.book} bookTitle={notesTarget.bookTitle} draftNote={notesTarget.draft} navigate={target => void nav(target)} close={closePanel} notify={notify} onChanged={() => void w.reloadNotes()}/></Sheet>}
     {w.dialog?.kind==='plan' && <Sheet key="plan" title={t("制作单")} className="lv-sheet-plan" suspended={Boolean(scene.sheet)} close={()=>w.answer(null)}><PlanSheet dialog={w.dialog} answer={w.answer} narratorSetting={w.settings.values.laivoxNarratorDefault} account={w.keyInfo?.account}/></Sheet>}
     {w.dialog && w.dialog.kind!=='plan' && <Decision dialog={w.dialog} answer={w.answer} {...appearance}/>}
   </main>

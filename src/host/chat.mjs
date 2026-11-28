@@ -184,8 +184,8 @@ export function registerChat(ctx, { library, jobs, imports, errorCode, speech })
 
   withService('commands', sub => sub.commands.register({
     name: 'laivox',
-    description: '小说配音（LaiVox）。粘贴正文朗读、导入 TXT/EPUB/PDF，或查看当前会话的进度。',
-    input: { hint: '[--reading|--clean|--cast] 正文，或 status，或添加 TXT/EPUB/PDF 附件', attachments: true },
+    description: '小说配音（LaiVox）。粘贴正文朗读、导入 TXT/EPUB/PDF/MD/DOCX/HTML，或查看当前会话的进度。',
+    input: { hint: '[--reading|--clean|--cast] 正文，或 status，或添加 TXT/EPUB/PDF/MD/DOCX/HTML 附件', attachments: true },
     recordInput: false,
     async handler({ rawInput, attachments = [], agent, signal }) {
       const session = sessionId(agent)

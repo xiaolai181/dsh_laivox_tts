@@ -22,7 +22,7 @@ export function EmptyStage({ w, create, openImport, books, openBook, openLibrary
   if (!chapter) {
     const sampleBook = Array.isArray(books) ? SAMPLE_BOOK_IDS.map(id => books.find(book => book.id === id)).find(Boolean) : null
     return <div className="lv-empty-stage lv-hero"><small className="lv-kicker">{t("小说配音（LaiVox）")}</small><h1>{t("把故事读给你听")}</h1><p>{t("导入一本小说，或粘贴一章正文开始制作。")}</p>
-      <div className="lv-inline"><button className="lv-primary" onClick={openImport}>{t("导入 TXT / EPUB / PDF")}</button><button onClick={create}>{t("粘贴一章正文")}</button>{sampleBook && openBook && <button onClick={() => openBook(sampleBook.id)}>{t("试听示例")}</button>}{Array.isArray(books) && books.length > 0 && openLibrary && <button onClick={openLibrary}>{t("打开书架")}</button>}</div></div>
+      <div className="lv-inline"><button className="lv-primary" onClick={openImport}>{t("导入电子书 / 文档")}</button><button onClick={create}>{t("粘贴一章正文")}</button>{sampleBook && openBook && <button onClick={() => openBook(sampleBook.id)}>{t("试听示例")}</button>}{Array.isArray(books) && books.length > 0 && openLibrary && <button onClick={openLibrary}>{t("打开书架")}</button>}</div></div>
   }
   if (chapter.operation && ['queued','running','paused'].includes(chapter.operation.state)) return null
   const multi = w.options.mode === 'multi'

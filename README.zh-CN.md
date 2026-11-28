@@ -33,20 +33,20 @@
 ### 在线安装（推荐）
 
 ```sh
-dsh plugin --profile desktop add "https://github.com/xiaolai181/dsh_laivox_tts/releases/latest/download/dsh-laivox-tts.tgz"
+dsh plugin --profile desktop add dsh-laivox-tts
 ```
 
-安装的是预构建插件包，无需在本地编译或授权构建脚本。如需锁定版本，可将 `latest/download` 替换为 `download/v0.7.12`（全部版本见 [Releases](https://github.com/xiaolai181/dsh_laivox_tts/releases)）。
+直接安装 npm 上的预构建插件包，无需在本地编译或授权构建脚本（国内网络可自动受益于镜像加速）。
 
-### 离线安装包安装
+### GitHub Release 链接或离线安装包安装
 
-从 [Releases](https://github.com/xiaolai181/dsh_laivox_tts/releases) 下载 `dsh-laivox-tts.tgz`，在文件所在目录执行：
+如需锁定版本或无法直连 npm，可使用 Release 下载链接（将 `latest/download` 替换为 `download/v0.7.13` 可锁定版本），或从 [Releases](https://github.com/xiaolai181/dsh_laivox_tts/releases) 下载 `dsh-laivox-tts.tgz` 到本地后安装：
 
 ```sh
+dsh plugin --profile desktop add "https://github.com/xiaolai181/dsh_laivox_tts/releases/latest/download/dsh-laivox-tts.tgz"
+# 或使用本地文件：
 dsh plugin --profile desktop add ./dsh-laivox-tts.tgz
 ```
-
-适合无法直连 GitHub 的离线或内网环境。
 
 <details>
 <summary>从源码目录安装（开发者）</summary>
@@ -103,7 +103,7 @@ Profile 会直接链接到该源码目录，安装后请勿移动或删除。执
 <summary>数据目录与升级前备份说明</summary>
 
 - 所有数据位于当前 Profile 目录下的 `<DSH 主目录>/profiles/<Profile 名>/dsh-laivox-tts/`（DSH 主目录默认为 `~/.dsh`），其中 `library.sqlite` 保存书架、台词、任务、音频与播放进度。
-- **升级前建议备份**：完全退出 DSH 后复制整个 `dsh-laivox-tts` 目录。跨版本更新可能升级本地数据库结构（当前为 v12），升级后的数据库无法再被旧版本插件打开。
+- **升级前建议备份**：完全退出 DSH 后复制整个 `dsh-laivox-tts` 目录。跨版本更新可能升级本地数据库结构（当前为 v13），升级后的数据库无法再被旧版本插件打开。
 - 内置试听示例仅在全新空白 Profile 首次启动时写入一次（已有书籍的老 Profile 升级不会写入），删除后重启或升级不会重新出现。
 
 </details>

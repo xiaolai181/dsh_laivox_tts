@@ -8,6 +8,7 @@ import { modelUsageTotals } from './model-usage.mjs'
 import { collectBytes, IMPORT_LIMIT } from './import/index.mjs'
 import { checkedText, firstTitle, titleOf } from './input.mjs'
 import { mediaProjection, registerMediaRoutes } from './media.mjs'
+import { createMp3Encoder } from './mp3.mjs'
 import { segmentChapter, segmentVersion } from '../domain/segment.mjs'
 import { resolveGenerationOptions } from '../domain/workflow.mjs'
 import { plainSegments } from './editorial.mjs'
@@ -15,6 +16,7 @@ import { allowedRanges, planComplete, toSynthesisParts } from './plan.mjs'
 import { createProductionService } from './production.mjs'
 import { scriptVariant } from './text.mjs'
 import { PLUGIN_ID } from '../domain/plugin.mjs'
+import { formatNotesMarkdown } from '../domain/notes.mjs'
 import { proposalView } from './chat.mjs'
 
 export function errorCode(error) {
@@ -210,7 +212,7 @@ export async function chapterProjection(library, id, requestedJob, detail = true
   return { ...state, cleanPreview, script }
 }
 
-export function registerAPI(ctx, { library, jobs, imports, chat, gatewayFor, keyStatus, setKey, clearKey, migrationWarning, voicePreview, mp3, snippets, speech, deliverables }) {
+export function registerAPI(ctx, { library, jobs, imports, chat, gatewayFor, keyStatus, setKey, clearKey, migrationWarning, voicePreview, mp3, snippets, speech, deliverables, updateChecker }) {
   const production = createProductionService(library, gatewayFor)
   function route(path, method, action, raw = false) {
     ctx.connection.fetch.register({
@@ -229,7 +231,7 @@ export function registerAPI(ctx, { library, jobs, imports, chat, gatewayFor, key
           // Unknown failures are bugs or environment problems: keep the cause in the
           // host log, never in the response.
           if (code === 'SERVICE_UNAVAILABLE') ctx.logger?.warn?.('LaiVox route ' + path + ': ' + (error?.stack ?? error?.message ?? error))
-          const status = code === 'INVALID_INPUT' ? 400 : code.endsWith('_NOT_FOUND') ? 404 : 409
+          const status = code === 'INVALID_INPUT' || code === 'EXCERPT_TOO_LONG' ? 400 : code.endsWith('_NOT_FOUND') ? 404 : 409
           return Response.json({ error: code, current: error.current, details: error.details,
             detail: typeof error?.detail === 'string' && error.detail ? error.detail : undefined,
             ...(Number.isSafeInteger(error?.retryAfter) && error.retryAfter > 0 && error.retryAfter <= 86_400 ? { retryAfter: error.retryAfter } : {}) },
@@ -238,7 +240,7 @@ export function registerAPI(ctx, { library, jobs, imports, chat, gatewayFor, key
       },
     })
   }
-  const media = registerMediaRoutes(route, library, mp3?.encodePcm)
+  const media = registerMediaRoutes(route, library, mp3?.encodePcm, createMp3Encoder)
   route('models', 'GET', request => modelDirectory(ctx.llm, { signal: request.signal }))
   route('models/reasoning', 'GET', async (request, params) => {
     const provider = params.get('provider')
@@ -268,6 +270,8 @@ export function registerAPI(ctx, { library, jobs, imports, chat, gatewayFor, key
   route('voices/preview', 'GET', async (request, params) =>
     new Response(await voicePreview.load(params.get('engine'), params.get('voice'), request.signal), { headers: { 'Content-Type': 'audio/wav' } }))
   route('settings', 'GET', () => library.settings())
+  route('plugin/update-info', 'GET', (_request, params) => updateChecker?.info({ check: params.get('check') === '1', force: params.get('force') === '1' }) ?? { running: '', available: false, command: 'dsh plugin add dsh-laivox-tts' })
+  route('plugin/update', 'POST', () => updateChecker?.applyUpdate() ?? { ok: false, error: 'UPDATE_MANUAL_REQUIRED', command: 'dsh plugin add dsh-laivox-tts' })
   route('settings/save', 'POST', async (request, _params, body) => {
     if (body?.changes?.laivoxNarratorDefault) await production.confirmNarratorDefault(body.changes.laivoxNarratorDefault, request.signal)
     const saved = await production.saveSettings(body)
@@ -277,6 +281,51 @@ export function registerAPI(ctx, { library, jobs, imports, chat, gatewayFor, key
     return saved
   })
   route('operations/result', 'GET', (_request, params) => library.operation(params.get('id')))
+  route('notes/list', 'GET', (_request, params) => {
+    const limitRaw = params.get('limit')
+    const limit = limitRaw && /^\d+$/u.test(limitRaw) ? Math.min(500, Math.max(1, Number(limitRaw))) : 100
+    return library.listNotes({
+      book: params.get('book') || undefined,
+      chapter: params.get('chapter') || undefined,
+      q: search(params),
+      offset: offset(params),
+      limit,
+    })
+  })
+  route('notes/save', 'POST', (_request, _params, body) => {
+    if (!body || typeof body !== 'object') throw new Error('INVALID_INPUT')
+    return library.saveNote({
+      id: body.id,
+      book: body.book,
+      chapter: body.chapter,
+      partIndex: body.partIndex,
+      charOffset: body.charOffset,
+      quote: body.quote,
+      speaker: body.speaker,
+      body: body.body,
+    })
+  })
+  route('notes/delete', 'POST', (_request, _params, body) => library.deleteNote({ id: body?.id }))
+  route('notes/export', 'GET', async (_request, params) => {
+    const bookId = params.get('book')
+    if (typeof bookId !== 'string' || !bookId) throw new Error('INVALID_INPUT')
+    const book = await library.shelfBook(bookId)
+    if (!book) throw new Error('BOOK_NOT_FOUND')
+    const allNotes = []
+    for (let off = 0; ; off += 500) {
+      const page = await library.listNotes({ book: bookId, offset: off, limit: 500 })
+      allNotes.push(...(page?.notes ?? []))
+      if (!page?.notes?.length || allNotes.length >= (page?.total ?? 0)) break
+    }
+    const md = formatNotesMarkdown(book.title, allNotes)
+    const ascii = book.title.replace(/[^\x20-\x7e]/gu, '_') || 'notes'
+    return new Response(md, {
+      headers: {
+        'Content-Type': 'text/markdown; charset=utf-8',
+        'Content-Disposition': `attachment; filename="${ascii}-notes.md"; filename*=UTF-8''${encodeURIComponent(book.title + '-笔记.md')}`,
+      },
+    })
+  })
   route('production/save', 'POST', (request, _params, body) => production.save(body, request.signal))
 
   route('library/books', 'GET', async (_request, params) => ({
@@ -358,7 +407,10 @@ export function registerAPI(ctx, { library, jobs, imports, chat, gatewayFor, key
     idOf(body?.id)
     const owner = session(body.session)
     if (body.action === 'discard') return imports.discard(body.id, owner)
-    if (body.action === 'publish') return imports.publish(body.id, owner, body.chapters, body.duplicate, body.revision)
+    if (body.action === 'publish') {
+      if (body.appendToBook !== undefined && body.appendToBook !== null && (typeof body.appendToBook !== 'string' || !body.appendToBook.trim())) throw new Error('INVALID_INPUT')
+      return imports.publish(body.id, owner, body.chapters, body.duplicate, body.revision, typeof body.appendToBook === 'string' ? body.appendToBook.trim() : undefined)
+    }
     if (body.action === 'reparse') return imports.reparse(body.id, owner, body, request.signal)
     if (body.action === 'analyze') return imports.analyze(body.id, owner, body.selection, request.signal)
     if (body.action === 'cut') return imports.changeCut(body.id, owner, body)
@@ -414,7 +466,7 @@ export function registerAPI(ctx, { library, jobs, imports, chat, gatewayFor, key
       (start !== undefined && (!Number.isSafeInteger(start) || start < 0)) ||
       (expectedRevision !== undefined && (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0))) throw new Error('INVALID_INPUT')
     if ((await library.job(job))?.chapter !== chapter) throw new Error('JOB_NOT_FOUND')
-    const saved = await library.playback(chapter, { n, offset, rate, volume, job, ...(Number.isSafeInteger(start) ? { start } : {}), ...(bookmark === true ? { bookmark: { n, offset, job } } : {}) }, expectedRevision)
+    const saved = await library.playback(chapter, { n, offset, rate, volume, job, at: Date.now(), ...(Number.isSafeInteger(start) ? { start } : {}), ...(bookmark === true ? { bookmark: { n, offset, job } } : {}) }, expectedRevision)
     // Listening to a conversation reading restarts its retention period. Best
     // effort: a failure here must not fail the position save.
     try { await library.touchSnippet(chapter) } catch (error) { ctx.logger?.warn?.('LaiVox could not mark a reading as listened: ' + (error?.message ?? error)) }

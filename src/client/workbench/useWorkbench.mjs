@@ -69,6 +69,9 @@ export function useWorkbench(player, navigation, memory) {
   const [booting, setBooting] = useState(() => Boolean(memory.activeId || pending?.chapter || pending?.book || livePlayback(player)))
   const [exportState, setExportState] = useState(null)
   const [exportFormat, setExportFormat] = useState('mp3')
+  const [jumpAnchor, setJumpAnchor] = useState(null)
+  const [chapterNotes, setChapterNotes] = useState([])
+  const jumpSeq = useRef(0)
   const life = useRef(false)
   const navOrder = useRef(0)
   const viewOrder = useRef(0)
@@ -358,6 +361,16 @@ export function useWorkbench(player, navigation, memory) {
     repaint()
   }
 
+  async function reloadNotes(chapterId = active.current?.view?.id) {
+    if (!chapterId) { if (life.current) setChapterNotes([]); return }
+    try {
+      const res = await get('notes/list', { chapter: chapterId, limit: 200 })
+      if (life.current && active.current?.view?.id === chapterId) {
+        setChapterNotes(Array.isArray(res?.notes) ? res.notes : [])
+      }
+    } catch { /* silent for environments without notes */ }
+  }
+
   function applyChapter(value, pin = null, adopt = true, autoplay = false) {
     if (active.current?.view.book !== value.book) setSelection(new Map())
     active.current = { view: value, pin, signature: signatureOf(value) }
@@ -367,6 +380,7 @@ export function useWorkbench(player, navigation, memory) {
     setChapter(value); setPage('reader'); setPanel(null)
     setError(''); setBlocked(null); clearNotice()
     player.update(value, adopt)
+    void reloadNotes(value.id)
     if (autoplay && value?.playbackJob && Array.isArray(value.media) && value.media.some(part => part.ready)) player.play()
   }
 
@@ -730,6 +744,11 @@ export function useWorkbench(player, navigation, memory) {
         if (target.keepScene || (target.restore && creation)) memory.keepScene = value.id
         const autoplay = target.autoplay === true && Boolean(value.playbackJob) && Array.isArray(value.media) && value.media.some(part => part.ready)
         applyChapter(value, target.job, true, autoplay)
+        if (Number.isSafeInteger(target.start) && target.start >= 0) {
+          setJumpAnchor({ chapter: value.id, start: target.start, key: ++jumpSeq.current })
+        } else {
+          setJumpAnchor(null)
+        }
         if (target.autoplay && !autoplay) flashNotice(deferText(() => t('下一章还没有可播放的音频')))
       }
       else {
@@ -966,7 +985,7 @@ export function useWorkbench(player, navigation, memory) {
     navigation.consume(pending)
     // "在对话音频中管理" from the conversation: the list in the library scene.
     if (pending.snippets) { setPage('snippets'); setPanel(null); return }
-    if (!pending.import) { void navigate({ chapter: pending.chapter, job: pending.job, book: pending.book }); return }
+    if (!pending.import) { void navigate({ chapter: pending.chapter, job: pending.job, book: pending.book, start: pending.start }); return }
     const order = ++importOrder.current
     get('import/preview', { id: pending.import, session: pending.session, settled: 1 }).then(data => {
       if (life.current && importOrder.current === order) showImport({ data, session: pending.session })
@@ -1203,17 +1222,31 @@ export function useWorkbench(player, navigation, memory) {
     if (exportRef.current.timer) { clearTimeout(exportRef.current.timer); exportRef.current.timer = null }
   }
 
-  async function exportBook(book, format = exportFormat, title = '') {
+  async function exportBook(book, optionsOrFormat = exportFormat, title = '') {
     if (!book) return
-    const chosen = format === 'wav' ? 'wav' : 'mp3'
+    const opts = typeof optionsOrFormat === 'string' ? { format: optionsOrFormat } : (optionsOrFormat ?? {})
+    const chosen = opts.format === 'wav' ? 'wav' : 'mp3'
+    const mode = opts.mode === 'single' ? 'single' : 'zip'
+    const subtitles = ['lrc', 'srt', 'both'].includes(opts.subtitles) ? opts.subtitles : 'none'
     stopExportPoll()
     const id = crypto.randomUUID()
     setExportFormat(chosen)
-    setExportState({ book, id, format: chosen, state: 'running', done: 0, total: 0, bytes: 0, error: '' })
+    setExportState({ book, id, format: chosen, mode, state: 'running', done: 0, total: 0, bytes: 0, error: '' })
     const base = String(title || 'novel').trim() || 'novel'
+    const ext = mode === 'single' && subtitles === 'none' ? chosen : 'zip'
     const anchor = document.createElement('a')
-    anchor.href = url('media/book', { book, format: chosen, export: id })
-    anchor.download = (base + '.' + chosen + '.zip').replace(/[\\/:*?"<>|]/g, '_')
+    anchor.href = url('media/book', {
+      book,
+      format: chosen,
+      mode,
+      subtitles,
+      speakers: opts.speakers === false ? '0' : '1',
+      ...(opts.chapters ? { chapters: opts.chapters } : {}),
+      ...(opts.from ? { from: opts.from } : {}),
+      ...(opts.to ? { to: opts.to } : {}),
+      export: id,
+    })
+    anchor.download = (base + '.' + ext).replace(/[\\/:*?"<>|]/g, '_')
     anchor.hidden = true
     document.body.append(anchor)
     anchor.click()
@@ -1400,7 +1433,7 @@ export function useWorkbench(player, navigation, memory) {
     notice: liveNotice, setNotice, clearNotice, flashNotice, openUsageDayAction, errors, clearError: () => { setError(''); setBlocked(null) }, blocked, decide, dialog, answer, memory, selection, setSelection, shelfVersion,
     selectRows, invertRows, clearSelection, selectBook,
     importEntry, showImport, jobCounts, actions, jobAction, queueScope, setQueueScope,
-    navigate, cancelCreation, refresh, listenOlder, reloadChapter, save, generate, listenFrom, clearListen, editDraft, editScript, editRole, saveRoleVoice, saveRoleProfile, upgradeVoiceRule, discardRoles, chooseRoleConflict, clearAudio,
+    navigate, jumpAnchor, chapterNotes, reloadNotes, cancelCreation, refresh, listenOlder, reloadChapter, save, generate, listenFrom, clearListen, editDraft, editScript, editRole, saveRoleVoice, saveRoleProfile, upgradeVoiceRule, discardRoles, chooseRoleConflict, clearAudio,
     renameBook, deleteBook, forgetBooks, exportState, exportFormat, setExportFormat, exportBook, cancelExport, compact,
     refreshShelf: () => changeShelf(n => n + 1),
   }

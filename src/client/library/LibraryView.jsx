@@ -18,6 +18,33 @@ function exportText(state) {
 }
 
 const chapterKey = chapter => chapter.offset + ':' + chapter.count
+const EXPORT_PREFS_KEY = 'lv-export-prefs'
+const DEFAULT_EXPORT_PREFS = { format: 'mp3', mode: 'zip', subtitles: 'srt', speakers: true }
+
+function loadExportPrefs() {
+  try {
+    const raw = globalThis.localStorage?.getItem?.(EXPORT_PREFS_KEY)
+    if (!raw) return DEFAULT_EXPORT_PREFS
+    const parsed = JSON.parse(raw)
+    return {
+      format: parsed?.format === 'wav' ? 'wav' : 'mp3',
+      mode: parsed?.mode === 'single' ? 'single' : 'zip',
+      subtitles: ['none', 'srt', 'lrc', 'both'].includes(parsed?.subtitles) ? parsed.subtitles : 'srt',
+      speakers: parsed?.speakers !== false,
+    }
+  } catch { return DEFAULT_EXPORT_PREFS }
+}
+
+function saveExportPrefs(cfg) {
+  try {
+    globalThis.localStorage?.setItem?.(EXPORT_PREFS_KEY, JSON.stringify({
+      format: cfg.format,
+      mode: cfg.mode,
+      subtitles: cfg.subtitles,
+      speakers: cfg.speakers,
+    }))
+  } catch { /* ignore storage restrictions */ }
+}
 
 export function ImportPreview({ entry, close, openBook, refresh, published, decide }) {
   const [data, setData] = useState(entry.data)
@@ -90,7 +117,13 @@ export function ImportPreview({ entry, close, openBook, refresh, published, deci
     finally { pending.current = false; setBusy(false) }
   }
 
-  const publish = force => perform('publish', { revision: data.revision, duplicate: force, chapters: data.chapters.flatMap((chapter, i) => exclude.has(chapterKey(chapter)) ? [] : [i]) })
+  const selectedOrdinals = data.chapters.flatMap((chapter, i) => exclude.has(chapterKey(chapter)) ? [] : [i])
+  const publish = (force, appendToBook) => perform('publish', {
+    revision: data.revision,
+    duplicate: force,
+    ...(appendToBook ? { appendToBook } : {}),
+    chapters: selectedOrdinals,
+  })
   return <section className="lv-preview" aria-label={t("导入预览")}>
     <div className="lv-heading"><div><small className="lv-kicker">{t("导入预览")}</small><h1>{data.title}</h1><small>{data.format.toUpperCase()} · {data.chapters.length}{" " + t("章")}</small></div><button onClick={close} disabled={busy && !reviewCanLeave}>{t("暂存稍后导入")}</button></div>
     <details className="lv-import-advanced" open={focused ? true : undefined}>
@@ -125,9 +158,21 @@ export function ImportPreview({ entry, close, openBook, refresh, published, deci
       {(page + 1) * 80 < data.chapters.length && <button onClick={() => setPage(page + 1)}>{t("后 80 章")}</button>}
     </div>
     {message && <p role="alert">{displayText(message)}</p>}
+    {!duplicate && data.matchedBook && <div className="lv-export" role="status">
+      <span>{t("检测到书架已有同源书籍《{title}》（已有 {existing} 章，可追加 {count} 章新内容）", {
+        title: data.matchedBook.title,
+        existing: data.matchedBook.existingChapters,
+        count: data.matchedBook.newChaptersCount,
+      })}</span>
+    </div>}
     <div className="lv-inline">
       {duplicate ? <><span>{t("书架已有此文件")}</span><button disabled={busy} onClick={() => { close(); void openBook(duplicate) }}>{t("打开已有书")}</button><button disabled={busy} onClick={() => publish(true)}>{t("创建副本")}</button></>
-        : <button className="lv-primary" disabled={busy || exclude.size === data.chapters.length} onClick={() => publish(false)}>{t("导入") + " "}{data.chapters.length - exclude.size}{" " + t("章")}</button>}
+        : data.matchedBook
+          ? <>
+            <button className="lv-primary" disabled={busy || exclude.size === data.chapters.length} onClick={() => publish(false, data.matchedBook.id)}>{t("追加到《{title}》（保留角色与音频）", { title: data.matchedBook.title })}</button>
+            <button disabled={busy || exclude.size === data.chapters.length} onClick={() => publish(false)}>{t("作为新书导入")}</button>
+          </>
+          : <button className="lv-primary" disabled={busy || exclude.size === data.chapters.length} onClick={() => publish(false)}>{t("导入") + " "}{data.chapters.length - exclude.size}{" " + t("章")}</button>}
       <button disabled={busy} onClick={() => { setMessage(''); reloadPreview().catch(error => setMessage(deferText(() => explain(error)))) }}>{t("重新读取")}</button>
       <button disabled={busy} onClick={() => perform('discard')}>{t("放弃导入")}</button>
     </div>
@@ -151,7 +196,7 @@ export function LibraryView({ books, chapters, selectedBook, active, mode = 'boo
   selectShelfBook, openChapter, listenChapter, clearAudio, uploading, cancelUpload, continueImport,
   batch, toggleBatch, selection, toggleChapter, selectRows, invertRows, clearSelection, selectBook, generateBatch, recastSelected,
   exportState, exportFormat, setExportFormat, exportBook, cancelExport, renameBook, deleteBook,
-  disabled, append, options }) {
+  openBookNotes, disabled, append, options }) {
   const data = books.value
   const contents = chapters.value
   const rows = Array.isArray(contents) ? contents : []
@@ -166,9 +211,38 @@ export function LibraryView({ books, chapters, selectedBook, active, mode = 'boo
   const booksContainerRef = useRef(null)
   const [renaming, setRenaming] = useState(false)
   const [name, setName] = useState('')
+  const [exportOpen, setExportOpen] = useState(false)
+  const [exportCfg, setExportCfg] = useState(() => ({ scope: 'all', from: 1, to: 1, ...loadExportPrefs() }))
+  const updateExportCfg = patch => setExportCfg(prev => {
+    const next = { ...prev, ...patch }
+    saveExportPrefs(next)
+    return next
+  })
+  const [exportPlan, setExportPlan] = useState(null)
+  const [planLoading, setPlanLoading] = useState(false)
   const book = selectedBook?.id
   const exportInfo = exportState && exportState.book === book ? exportState : null
-  useEffect(() => { setRenaming(false); setName('') }, [book])
+  useEffect(() => {
+    setRenaming(false); setName(''); setExportOpen(false); setExportPlan(null)
+    if (selectedBook?.chapters) setExportCfg(c => ({ ...c, from: 1, to: selectedBook.chapters }))
+  }, [book, selectedBook?.chapters])
+  useEffect(() => {
+    if (!exportOpen || !book) return undefined
+    const controller = new AbortController()
+    setPlanLoading(true)
+    const params = {
+      book,
+      format: exportCfg.format,
+      mode: exportCfg.mode,
+      ...(exportCfg.scope === 'range' ? { from: exportCfg.from, to: exportCfg.to } : {}),
+      ...(exportCfg.scope === 'selected' && selection.size ? { chapters: [...selection.keys()].join(',') } : {}),
+    }
+    get('media/export-plan', params, controller.signal)
+      .then(value => { if (!controller.signal.aborted) setExportPlan(value) })
+      .catch(() => { if (!controller.signal.aborted) setExportPlan(null) })
+      .finally(() => { if (!controller.signal.aborted) setPlanLoading(false) })
+    return () => controller.abort()
+  }, [exportOpen, book, exportCfg.format, exportCfg.mode, exportCfg.scope, exportCfg.from, exportCfg.to, selection.size])
   async function saveName() {
     if (!name.trim()) return
     const saved = await renameBook(book, name)
@@ -224,6 +298,8 @@ export function LibraryView({ books, chapters, selectedBook, active, mode = 'boo
       <hr className="lv-menu-divider"/>
       {['mp3', 'wav'].map(format => <button key={format} disabled={disabled || exportInfo?.state === 'running'}
         onClick={() => { close(); exportBook(book, format, selectedBook.title) }}>{t('导出整本 · {format}', { format: format.toUpperCase() })}</button>)}
+      <button disabled={disabled || exportInfo?.state === 'running'} onClick={() => { close(); setExportOpen(open => !open) }}>{t("高级导出与字幕…")}</button>
+      {openBookNotes && <button disabled={disabled} onClick={() => { close(); openBookNotes({ book, bookTitle: selectedBook.title }) }}>{t("听书批注与导出…")}</button>}
       <hr className="lv-menu-divider"/>
       <button className="lv-destructive" disabled={disabled} onClick={() => { close(); deleteBook(book, {
         title: selectedBook.title, chapters: selectedBook.chapters, audioBytes: selectedBook.audioBytes }) }}>{t("删除本书")}</button>
@@ -284,6 +360,58 @@ export function LibraryView({ books, chapters, selectedBook, active, mode = 'boo
         <button type="button" onClick={() => setRenaming(false)}>{t("取消")}</button>
       </form>}
       {exportInfo && <small className="lv-export" role="status">{exportText(exportInfo)}{exportInfo.state === 'running' && <>{" "}<button type="button" className="lv-link" onClick={() => cancelExport?.()}>{t('取消')}</button></>}</small>}
+      {exportOpen && <form className="lv-export-panel" aria-label={t("高级导出与字幕")} onSubmit={event => {
+        event.preventDefault()
+        exportBook(book, {
+          format: exportCfg.format,
+          mode: exportCfg.mode,
+          subtitles: exportCfg.subtitles,
+          speakers: exportCfg.speakers,
+          ...(exportCfg.scope === 'range' ? { from: exportCfg.from, to: exportCfg.to } : {}),
+          ...(exportCfg.scope === 'selected' && selection.size ? { chapters: [...selection.keys()].join(',') } : {}),
+        }, selectedBook.title)
+        setExportOpen(false)
+      }}>
+        <div className="lv-inline">
+          <label>{t("范围") + " "}<select value={exportCfg.scope} onChange={e => updateExportCfg({ scope: e.target.value })}>
+            <option value="all">{t("全本")}</option>
+            <option value="range">{t("章节范围")}</option>
+            {selection.size > 0 && <option value="selected">{t("已选章节（{count}）", { count: selection.size })}</option>}
+          </select></label>
+          {exportCfg.scope === 'range' && <>
+            <label>{t("从第") + " "}<input type="number" min="1" max={selectedBook.chapters || 5000} value={exportCfg.from} onChange={e => updateExportCfg({ from: Math.max(1, Number(e.target.value) || 1) })}/></label>
+            <label>{t("到第") + " "}<input type="number" min="1" max={selectedBook.chapters || 5000} value={exportCfg.to} onChange={e => updateExportCfg({ to: Math.max(1, Number(e.target.value) || 1) })}/></label>
+          </>}
+        </div>
+        <div className="lv-inline">
+          <label>{t("打包") + " "}<select value={exportCfg.mode} onChange={e => updateExportCfg({ mode: e.target.value, ...(e.target.value === 'single' ? { format: 'mp3' } : {}) })}>
+            <option value="zip">{t("每章一个文件（ZIP）")}</option>
+            <option value="single">{t("合并为单个文件")}</option>
+          </select></label>
+          <label>{t("音频格式") + " "}<select value={exportCfg.format} onChange={e => updateExportCfg({ format: e.target.value })}>
+            <option value="mp3">MP3</option>
+            <option value="wav">WAV</option>
+          </select></label>
+          <label>{t("字幕") + " "}<select value={exportCfg.subtitles} onChange={e => updateExportCfg({ subtitles: e.target.value })}>
+            <option value="none">{t("不附字幕")}</option>
+            <option value="srt">SRT</option>
+            <option value="lrc">LRC</option>
+            <option value="both">SRT + LRC</option>
+          </select></label>
+        </div>
+        {exportCfg.subtitles !== 'none' && <label className="lv-check"><input type="checkbox" checked={exportCfg.speakers} onChange={e => updateExportCfg({ speakers: e.target.checked })}/>{" " + t("字幕中标明说话人角色名")}</label>}
+        <small role="status">{planLoading ? t("正在计算预计时长…")
+          : exportPlan ? t("可导出 {ready}/{total} 章 · 音频约 {mins} 分钟 · 预计耗时 {eta} 秒", {
+            ready: exportPlan.readyCount, total: exportPlan.totalChapters,
+            mins: Math.max(1, Math.round((exportPlan.totalSeconds || 0) / 60)),
+            eta: exportPlan.estimatedBuildSeconds || 1,
+          }) + (exportPlan.skippedCount ? t("（跳过 {count} 章）", { count: exportPlan.skippedCount }) : '')
+          : t("选择导出范围与字幕格式。")}</small>
+        <div className="lv-inline">
+          <button type="submit" className="lv-primary" disabled={disabled || exportInfo?.state === 'running' || exportPlan?.readyCount === 0}>{t("开始导出")}</button>
+          <button type="button" onClick={() => setExportOpen(false)}>{t("关闭")}</button>
+        </div>
+      </form>}
       <input aria-label={t("搜索章节")} placeholder={t("搜索章节")} value={chapterQuery} onChange={event => changeChapterQuery(event.target.value)}/>
       {chapters.error && <div role="alert" className="lv-error">{displayText(chapters.error)} <button onClick={chapters.reload}>{t("重试")}</button></div>}
       {!contents && !chapters.error && <small role="status">{t("正在读取目录…")}</small>}

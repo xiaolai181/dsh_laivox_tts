@@ -33,7 +33,7 @@ function Paragraph({ line, span }) {
   </>
 }
 
-export function ProseView({ chapter, player, notify, onSeek }) {
+export function ProseView({ chapter, player, notify, onSeek, jumpAnchor, notes, openNotes }) {
   const [tab, setTab] = useState(() => chapter?.editorial?.cleaned || chapter?.editorial?.removed?.length ? 'cleaned' : 'reader')
   const [follow, setFollow] = useState(true)
   const [page, setPage] = useState(0)
@@ -66,9 +66,38 @@ export function ProseView({ chapter, player, notify, onSeek }) {
   }
   const active = activeLineAt(lines, part?.start)
   const index = useMemo(() => active < 0 ? -1 : visible.findIndex(line => line.id === active), [visible, active])
+  const jumpTarget = jumpAnchor && chapter?.id === jumpAnchor.chapter ? activeLineAt(lines, jumpAnchor.start) : -1
   const max = Math.max(0, Math.ceil(visible.length / 160) - 1)
   const shown = follow && index >= 0 ? Math.floor(index / 160) : Math.min(page, max)
+  const notedLines = useMemo(() => {
+    const map = new Map()
+    if (!Array.isArray(notes) || !notes.length || !lines.length) return map
+    for (const note of notes) {
+      const id = activeLineAt(lines, note.charOffset)
+      if (id >= 0) map.set(id, (map.get(id) ?? 0) + 1)
+    }
+    return map
+  }, [notes, lines])
 
+  useEffect(() => {
+    if (jumpTarget < 0) return
+    const visiblePos = visible.findIndex(line => line.id === jumpTarget)
+    const targetList = visiblePos >= 0 ? visible : lines
+    const targetPos = visiblePos >= 0 ? visiblePos : lines.findIndex(line => line.id === jumpTarget)
+    if (visiblePos < 0 && cleaned) setTab('reader')
+    if (targetPos >= 0) {
+      setFollow(false)
+      setPage(Math.floor(targetPos / 160))
+    }
+    void targetList
+  }, [jumpAnchor?.key, chapter?.id])
+  useEffect(() => {
+    if (jumpTarget < 0) return
+    const frame = requestAnimationFrame?.(() => {
+      linesRef.current?.querySelector('[data-jump-target="true"]')?.scrollIntoView?.({ block: 'center' })
+    })
+    return () => { if (frame !== undefined) cancelAnimationFrame?.(frame) }
+  }, [jumpAnchor?.key, shown, tab])
   useEffect(() => {
     if (follow && index >= 0) linesRef.current?.querySelector('[aria-current=true]')?.scrollIntoView({ block: 'nearest' })
   }, [index, follow, tab])
@@ -92,18 +121,24 @@ export function ProseView({ chapter, player, notify, onSeek }) {
         <button onClick={() => void navigator.clipboard.writeText(visible.map(line => line.text).join('\n'))
           .then(() => notify(deferText(() => t('已复制清洗后正文'))), () => notify(deferText(() => t('无法访问剪贴板，可以手动复制。'))))}>{t("复制正文")}</button></div>}
       <article className="lv-prose" ref={linesRef} aria-label={cleaned ? t('清洗后的小说正文') : t('小说原文')}>
-        {visible.slice(shown * 160, (shown + 1) * 160).map(line => <p key={line.id} aria-current={active === line.id ? 'true' : undefined}
-          role={onSeek ? 'button' : undefined} tabIndex={onSeek ? 0 : undefined} aria-label={onSeek ? t('从这一行播放') : undefined}
-          onClick={onSeek ? () => {
-            // Selecting text to copy ends with a click too; that must not start playback or synthesis.
-            if (typeof window !== 'undefined' && window.getSelection?.()?.isCollapsed === false) return
-            onSeek(line.start)
-          } : undefined}
-          onKeyDown={onSeek ? event => {
-            if (event.key !== 'Enter' && event.key !== ' ') return
-            event.preventDefault()
-            onSeek(line.start)
-          } : undefined}><Paragraph line={line} span={span}/></p>)}
+        {visible.slice(shown * 160, (shown + 1) * 160).map(line => {
+          const noteCount = notedLines.get(line.id) ?? 0
+          return <p key={line.id} aria-current={active === line.id ? 'true' : undefined} data-jump-target={jumpTarget === line.id ? 'true' : undefined}
+            data-has-note={noteCount > 0 ? 'true' : undefined}
+            role={onSeek ? 'button' : undefined} tabIndex={onSeek ? 0 : undefined} aria-label={onSeek ? t('从这一行播放') : undefined}
+            onClick={onSeek ? () => {
+              // Selecting text to copy ends with a click too; that must not start playback or synthesis.
+              if (typeof window !== 'undefined' && window.getSelection?.()?.isCollapsed === false) return
+              onSeek(line.start)
+            } : undefined}
+            onKeyDown={onSeek ? event => {
+              if (event.key !== 'Enter' && event.key !== ' ') return
+              event.preventDefault()
+              onSeek(line.start)
+            } : undefined}><Paragraph line={line} span={span}/>{noteCount > 0 && openNotes && <button type="button" className="lv-link"
+              aria-label={t("查看这句的 {count} 条批注", { count: noteCount })}
+              onClick={e => { e.stopPropagation(); openNotes({ book: chapter.book, bookTitle: chapter.bookTitle }) }}>{` · ✎${noteCount}`}</button>}</p>
+        })}
       </article>
       {max > 0 && <div className="lv-heading lv-page-nav"><button disabled={shown === 0} onClick={() => { setFollow(false); setPage(shown - 1) }}>{t("前一页正文")}</button>
         <small>{shown + 1} / {max + 1}</small><button disabled={shown === max} onClick={() => { setFollow(false); setPage(shown + 1) }}>{t("后一页正文")}</button></div>}

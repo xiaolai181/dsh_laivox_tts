@@ -1,5 +1,5 @@
 import { translate as t } from '../i18n/locale.mjs'
-import React, { useSyncExternalStore } from 'react'
+import React, { useEffect, useSyncExternalStore } from 'react'
 import { ImmersiveLines } from './ImmersiveLines.jsx'
 import { ProseView } from './ProseView.jsx'
 import { EmptyStage } from './EmptyStage.jsx'
@@ -7,9 +7,12 @@ import { MODE_NAMES, ProductionBar } from './ProductionBar.jsx'
 import { ProductionLive } from './ProductionLive.jsx'
 import { ProseChrome } from './ProseChrome.jsx'
 import { pauseNoticeKey } from '../workbench/pauseNotice.mjs'
-export function StageScene({ w, player, immersive, setImmersive, navigate, listenFrom, create, openImport, books, openBook, openLibrary }) {
+export function StageScene({ w, player, immersive, setImmersive, navigate, listenFrom, create, openImport, books, openBook, openLibrary, openNotes, askAi }) {
   const chapter=w.chapter
   const s = useSyncExternalStore(player.subscribe, player.getSnapshot)
+  useEffect(() => {
+    if (w.jumpAnchor && chapter?.id === w.jumpAnchor.chapter && immersive) setImmersive(false)
+  }, [w.jumpAnchor?.key, chapter?.id])
   if (w.booting && !chapter) return <section role="status">{t("正在打开章节…")}</section>
   // The kicker describes the audio being heard, not the next production.
   const heard = t(MODE_NAMES[chapter?.playbackJob?.mode])
@@ -32,9 +35,9 @@ export function StageScene({ w, player, immersive, setImmersive, navigate, liste
       onOpenDay={() => void w.openUsageDayAction()} onOpenSettings={() => w.setPanel('production')} onOpenRoles={() => w.setPanel('roles')}/>}
     {!chapter ? <EmptyStage w={w} create={create} openImport={openImport} books={books} openBook={openBook} openLibrary={openLibrary}/> : !chapter.media?.length ? <>
       <EmptyStage w={w} create={create} openImport={openImport}/>
-      <ProseView chapter={chapter} player={player} draft={w.draft} busy={w.busy} notify={w.flashNotice} navigate={navigate} onSeek={listenFrom}/>
+      <ProseView chapter={chapter} player={player} draft={w.draft} busy={w.busy} notify={w.flashNotice} navigate={navigate} onSeek={listenFrom} jumpAnchor={w.jumpAnchor} notes={w.chapterNotes} openNotes={openNotes}/>
     </> : immersive
-      ? <ImmersiveLines chapter={chapter} player={player} listenFrom={listenFrom}/>
-      : <ProseView chapter={chapter} player={player} draft={w.draft} busy={w.busy} notify={w.flashNotice} navigate={navigate} onSeek={listenFrom}/>}
+      ? <ImmersiveLines chapter={chapter} player={player} listenFrom={listenFrom} notify={w.flashNotice} askAi={askAi}/>
+      : <ProseView chapter={chapter} player={player} draft={w.draft} busy={w.busy} notify={w.flashNotice} navigate={navigate} onSeek={listenFrom} jumpAnchor={w.jumpAnchor} notes={w.chapterNotes} openNotes={openNotes}/>}
   </section>
 }
